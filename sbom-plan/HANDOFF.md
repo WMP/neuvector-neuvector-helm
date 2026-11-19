@@ -39,6 +39,7 @@ NeuVector daje pełny inwentarz komponentów (SBOM) dla obrazów, działających
 | D21 | Praca nocna | Użytkownik: „nie pytaj o więcej”. Nadzorca prowadzi sesje według grafu bez pytań. Decyzje wymagające człowieka (zgoda na podniesienie zależności spoza D2, PR do upstream, wysyłka na zewnątrz) czekają w §11. |
 | D22 | Syft w skanerze – domyślnie (decyzja nadzorcy) | Syft domyślnie **włączony**. Flaga/zmienna do wyłączenia. Limit czasu 300 s. Błąd albo przekroczenie czasu: skan kończy się bez danych Syft, ostrzeżenie w logu. Do potwierdzenia przez użytkownika przed PR upstream (upstream może woleć domyślnie wyłączony). |
 | D23 | Filtr `Origin=syft` w admission (decyzja nadzorcy) | Przeniesiony z S6 do S4. Linia filtra jest w repozytorium `neuvector` (`controller/cache/admission.go`), a S6 zmienia tylko skaner. S4 i tak zmienia admission. Do czasu S4 moduły Syft w obrazach z gałęzi S6 mogą wejść do istniejącego kryterium `modules` – testy admission na klastrze dopiero po S4. |
+| D24 | Podniesienia z bumpa neuvector w skanerze (decyzja nadzorcy, S6) | Zaakceptowane: `hashicorp/go-rootcerts` 1.0.2→1.1.0, `go.yaml.in/yaml/v3` 3.0.5→3.0.6. Źródło: `go.mod` upstream neuvector `c982a5e` (skaner miał neuvector `230e5ebe`, 8 commitów wcześniej). Każdy bump neuvector w skanerze je przyniesie, niezależnie od SBOM. |
 
 ## 3. Gdzie NV trzyma dane (odpowiedź na pytanie o miejsce na pliki SBOM)
 
