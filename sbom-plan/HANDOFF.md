@@ -183,3 +183,23 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 - SBOM klastra to mapa oprogramowania i ułatwia atak. RBAC na wszystkich nowych endpointach.
 - Testy tylko na publicznych obrazach testowych. Bez danych i klastrów klientów.
 - Wyniki z sesji wykonawczych i testów weryfikuje człowiek przed PR do upstream.
+
+## 10. Wyniki sesji
+
+### S0: CI do ghcr.io – wynik (sesja `session_01Y1996xaFsjiC8zWeDi42Ye`, przegląd nadzorcy: OK)
+**Co zrobiono:** nowy workflow `.github/workflows/fork-images.yml` na gałęzi `claude/sbom-s0-ci-ghcr` w `neuvector-neuvector` (`46ecedf`, macierz controller + enforcer), `neuvector-manager` (`6c516f4`) i `neuvector-scanner` (`dfb8da6`, **jeszcze nie wypchnięty**). Uruchamia się przy push na każdą gałąź oprócz `main`/`master` i przez `workflow_dispatch`. Obraz: `ghcr.io/wmp/neuvector-<komponent>:<gałąź oczyszczona>-<7 znaków SHA>`. Workflow jest w osobnym commicie: **usuń ten commit przed PR do upstream**. Każda następna sesja bazuje na `claude/sbom-s0-ci-ghcr` (albo cherry-pick tego commita), żeby push budował obrazy.
+**Obrazy (publiczne, `docker pull` bez logowania):**
+- `ghcr.io/wmp/neuvector-controller:claude-sbom-s0-ci-ghcr-46ecedf`
+- `ghcr.io/wmp/neuvector-enforcer:claude-sbom-s0-ci-ghcr-46ecedf`
+- `ghcr.io/wmp/neuvector-manager:claude-sbom-s0-ci-ghcr-6c516f4`
+- `ghcr.io/wmp/neuvector-scanner`: jeszcze nie ma (workflow nie jest wypchnięty).
+**Decyzje:**
+- Tylko `actions/checkout` (przypięty SHA). `docker login` z `GITHUB_TOKEN` przez `--password-stdin`. `permissions: {}` na poziomie workflow, job: `contents: read`, `packages: write`. Warunek `github.repository_owner != 'neuvector'`.
+- Tylko linux/amd64. Bez cache GHA. `concurrency` z `cancel-in-progress`, `timeout-minutes: 120`.
+- neuvector: `VERSION=interim/<tag>`. Bez prefiksu `interim/` kontroler traktuje obraz jako wydanie (`controller/controller.go:932`, `controller/kv/upgrade.go:981`).
+- Skaner, baza CVE: bez Git LFS. Skrypt upstream `scripts/ghcr-vulndb-artifact.sh` pobiera podpisany (cosign) artefakt `ghcr.io/neuvector/vul/cvedb:<VULNDB_VERSION z Dockerfile>` jako `data/cvedb.regular`. Dockerfile bez zmian.
+**Sprawdzenie:** actionlint i zizmor: 0 nowych uwag (skaner: uwagi takie same jak w `release.yml` upstream). Lokalny `docker build`: scanner, controller, enforcer OK. GitHub Actions: neuvector i manager – sukces.
+**Przeglądy (D17):** /code-review 1: 6 nit, poprawiono 2. /code-review 2: 5 uwag, poprawiono 1 (tag zaczynał się od `-`). /code-review 3: 4 uwagi, poprawiono 2 (prefiks `interim/`, `timeout-minutes`). /security-review: 0.
+**Otwarte sprawy:** push workflow skanera (klasyfikator trybu auto odrzucił `add_repo` z push w sesji potomnej). Stare tagi w ghcr nie są usuwane.
+**Wnioski dla nadzorcy:** sesje potomne nie dostają przydzielonej gałęzi, a `add_repo` z dostępem push może zostać odrzucony. Repozytorium, do którego sesja ma pisać, podawaj jako `source_url`.
+**Nowe helpery:** brak.
