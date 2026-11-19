@@ -188,6 +188,12 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | klucz scalania NV + Syft | `scanUtils.PurlMergeKey` | `neuvector/share/scan/purl.go` (S2) |
 | zapis raportu rejestru w limicie KV | `encodeScanReport` (niepubliczny) | `neuvector/controller/kv/helper.go` (S2) |
 | generowanie `*.pb.go` | protoc 3.5.1 + protoc-gen-go v1.0.0, `make -C share` | `neuvector/share/Makefile` |
+| SBOM z modułów (CycloneDX 1.6 / SPDX 2.3) | `sbom.Components`, `sbom.Write`, `sbom.ContentType` | `neuvector/controller/sbom/sbom.go` (S3) |
+| Moduły i baseOS skanu workloadu/hosta (bez kontroli dostępu) | `cacher.GetScanModules` | `neuvector/controller/cache/scan.go` (S3) |
+| Moduły obrazu z rejestru z RBAC (także `all`) | `scanner.GetRegistryImageModules` | `neuvector/controller/scan/interface.go` (S3) |
+| Kontrola dostępu do rejestru i obrazu | `resolveRegistry`, `authorizeRegistryImage` (niepubliczne) | `neuvector/controller/scan/interface.go` (S3) |
+| Klasyfikacja licencji SPDX | `classifyLicense` (niepubliczne) | `neuvector/controller/sbom/license.go` (S3) |
+| Wspólne kroki handlerów SBOM (RBAC, format, odpowiedź) | `sbomPrepare`, `sbomRespond`, `sbomRespErr` | `neuvector/controller/rest/sbom.go` (S3) |
 
 ## 9. Bezpieczeństwo
 
@@ -254,6 +260,45 @@ func PurlMergeKey(purl string) string // "type/namespace/name@version"; "" gdy p
 **Przeglądy (D17):** /code-review 1: 9 uwag, poprawiono 3. /code-review 2: 7 uwag, poprawiono 3. /code-review 3: 7 uwag, poprawiono 3. Pominięte: problemy istniejące (raport za duży po 3 krokach, limit transakcji Consul), zakres S6 (parsery, filtr admission), zgodność z planem (klucz bez epoki rpm, typ bitnami). /security-review: 0. **Uwaga dla S3:** segmenty `..` w namespace purl zostają w napisie; nie używaj purl jako ścieżki pliku ani URL.
 **Otwarte sprawy:** limit transakcji Consul (`txn_max_req_len` po base64) **[weryfikacja na klastrze]**; raport za duży po 3 krokach ginie bez błędu (problem istniejący, osobny PR: `putGZipKVChunks` dla rejestru); dokładność purl deb/apk/jar/composer/R – S6 (D19); typ `bitnami` **[weryfikacja]**.
 
+### S3: Eksport SBOM i RBAC – wynik (sesja `session_01Y19972WPZSna5MfP2XVLqi`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s3-export-rbac` w `neuvector-neuvector` (od `claude/sbom-s2-proto-purl`, 8 commitów, ostatni `da8cf49`).
+- `deps(go)` (`3bded4f`): `cyclonedx-go` v0.12.0, `spdx/tools-golang` v0.5.7, `anchore/go-struct-converter` v0.1.0 (indirect). 0 podniesień (nadzorca sprawdził diff `go.mod`).
+- Pakiet `controller/sbom`: CycloneDX 1.6 i SPDX 2.3 JSON z `Modules`; purl z `scanUtils.ModulePurl`. Lista ID licencji SPDX: `controller/sbom/spdx.schema.json` (`go:embed`).
+- REST (GET, `format=cyclonedx|spdx`, domyślnie cyclonedx, inny = 400): `/v1/scan/workload/:id/sbom` (źródło „running container”, property `neuvector:runtime=true` dla pakietów spoza skanu obrazu z rejestru o tym samym image ID, licencje ze skanu obrazu), `/v1/scan/image/:id/sbom` (skan z rejestru, gdy dostępny; inaczej skan runtime workloadu), `/v1/scan/host/:id/sbom`, `/v1/scan/registry/:name/image/:id/sbom` (także `all`). `Content-Disposition` ze stałą nazwą pliku. Dokumentacja: `controller/api/apis.yaml`.
+- Kody: brak `sbom` w żadnej domenie = 403; obiekt w niedostępnym namespace/rejestrze = 403 (wzór istniejących raportów skanu); brak obiektu/skanu/skan z błędem = 404; inny błąd = 500 bez tekstu błędu.
+- Uprawnienie `sbom`: `PERM_SBOM = 0x00200000`, zakres global + namespace, odczyt i zapis (`CONST_API_SBOM`). admin/fedAdmin: odczyt + zapis; reader/fedReader: odczyt; ciops/none: brak. Admin/reader w namespace: też `sbom`. Istniejące role własne nie dostają `sbom` (wyjątek niżej). Rancher SSO: zasób `sbom`. `sbom` wystarcza bez rt_scan/reg_scan (D8).
+**API generatora (`controller/sbom`):**
+```go
+const FormatCycloneDX = "cyclonedx"; FormatSPDX = "spdx"
+const SourceContainer = "running container"; SourceImage = "image"; SourceHost = "host"
+type Meta struct { Source, Name, ID, Domain, Cluster, Digest string; Created time.Time; Serial string }
+type Component struct { Name, Version, Purl string; Licenses []string; Runtime bool }
+func ContentType(format string) (ct string, ok bool)
+func Components(modules []*share.ScanModule, namespace string, image []*share.ScanModule) []Component
+func Write(w io.Writer, format string, meta Meta, comps []Component) error
+// controller/cache: func (m CacheMethod) GetScanModules(id string) ([]*share.ScanModule, string, error) – bez kontroli dostępu
+// controller/scan: func (m *scanMethod) GetRegistryImageModules(name, id string, acc *access.AccessControl) ([]*share.ScanModule, *share.CLUSRegistryImageSummary, error)
+```
+**Obrazy:** `ghcr.io/wmp/neuvector-controller:claude-sbom-s3-export-rbac-da8cf49`, `ghcr.io/wmp/neuvector-enforcer:claude-sbom-s3-export-rbac-da8cf49`. CI run 44596216304 i Fork test images run 44596216395: sukces.
+**Testy:** `go test ./share/... ./controller/...` OK (nadzorca powtórzył dla `sbom`, `rest`, `access`, `scan`, `cache`, `share/...`: OK). golangci-lint v2.15.0: 0. openapi-lint: OK. 6 plików wzorcowych `controller/sbom/testdata/`: `validate.py` VALID (nadzorca powtórzył: VALID). Testy RBAC: brak `sbom` → 403 na 4 endpointach; admin/reader → 200; użytkownik ns1 → ns2 = 403, host = 403, rejestr ns2 = 403; `sbom` w ns2 + rt_scan w ns1 → workload ns1 = 403.
+**Decyzje:**
+- Duplikaty: aplikacja `nginx`/`openssl`/`busybox` usuwana tylko, gdy istnieje pakiet OS o tej samej nazwie. Duplikaty Source+Name+Version łączone (suma licencji, pierwszy niepusty purl).
+- Nazwa komponentu: OS – nazwa binarna; aplikacje – bez przedrostków `python:`, `go:` itd. (jar: `groupId:artifactId`).
+- Runtime: klucz Source+Name+Version, skan obrazu = skan z rejestru o tym samym image ID (nie digest manifestu), tylko z rejestrów dostępnych dla użytkownika.
+- Licencje: ID SPDX → `license.id`; wyrażenie → `expression`; tekst → `license.name` / `LicenseRef-<tekst>`.
+- `documentNamespace` SPDX = `https://neuvector.com/spdx/<UUID>`. Purl tylko w polu `purl`/`externalRefs`.
+- Nazwa klastra przez `NewReaderAccessControl` (użytkownik namespace widzi ją w dokumencie).
+- **Rola własna z wszystkimi uprawnieniami odczytu oprócz `sbom`** (zapisana przed S3) nadal dostaje pełny `PERMS_CLUSTER_READ`, a więc też `sbom`. Bez tego stare role tracą dostęp do federacji, systemu itd. Uzasadnienie: taka rola i tak czyta raporty skanów z modułami. Do potwierdzenia przed PR (§11).
+**Przeglądy (D17):** /code-review 1: 7 uwag, poprawiono 5 (+2 w przeglądzie 2). /code-review 2: 8 uwag, poprawiono 8. /code-review 3: 9 uwag, poprawiono 7; pominięto 2 (zapis `sbom` bez API – S5; `sbom` bez rt_scan – D8). /security-review: 0 HIGH/MEDIUM; regresja `PERMS_CLUSTER_READ` dla starych ról poprawiona (`da8cf49`); LOW (OpenShift: nazwa repo:tag z innego projektu w nazwie dokumentu rejestru, tak samo jak istniejące endpointy) pominięta.
+**Otwarte sprawy:**
+- `GetScanModules`/`GetRegistryImageModules` dla skanów z błędem sprawdzone tylko przeglądem kodu. Do sprawdzenia na klastrze (TEST-RUNBOOK S3).
+- Moduły `Origin=syft` nie trafiają do SBOM workloadu (agent nie uruchamia Syft). SBOM obrazu je zawiera.
+- DT (S5) potrzebuje odchudzonego CycloneDX: dziś `Write` daje pełny dokument.
+- Lokalny golangci-lint: zbuduj Go 1.27 (`GOTOOLCHAIN=go1.27.4 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0`).
+
 ## 11. Decyzje czekające na człowieka
 
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
+- S3: rola własna z wszystkimi uprawnieniami odczytu (zapisana przed S3) automatycznie dostaje `sbom` (decyzja S3, `controller/access/access.go`, `getRolePermitValues`). Potwierdź przed PR upstream.
+- D22: Syft domyślnie włączony. Potwierdź przed PR upstream.
+- D24: 2 podniesienia z bumpa neuvector w skanerze. Potwierdź przed PR upstream.
