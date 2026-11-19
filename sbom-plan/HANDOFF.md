@@ -433,6 +433,16 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 - Lista `/v1/sbom/s3/images` czyta cały prefiks klastra (+ HEAD) przy każdym wywołaniu.
 - Uwaga procesowa sesji: jeden błędny `git reset --hard` w trakcie pracy; zmiany odtworzone, commity kompletne.
 
+### S8b: Pełny SBOM w skanerze – wynik (sesja `session_01Y19971ctDDmFyJiRU9pnCP`, **bez przeglądu nadzorcy: gałąź tylko lokalna**)
+**Co zrobiono:** gałąź `claude/sbom-s8-scanner` w `neuvector-scanner` (od `claude/sbom-s6-syft` `99ae74f`, 5 commitów lokalnie: `0c05eec` deps(go), `46a0f04` feat, `92111d5`, `c7c25f3`, `c27f6fe` fix). **Push zablokowany przez klasyfikator trybu auto (§11).** Obraz po push: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s8-scanner-c27f6fe`.
+- `deps(go)`: `replace` → `WMP/neuvector-neuvector v0.0.0-20261119220907-84ebcea44eb3` (S8a). Podniesienie `cyclonedx-go` 0.10.0 → 0.12.0 (D27). 0 nowych modułów.
+- `ScanImage` (tylko ścieżka z Syft): przy `req.IncludeFullSBOM` pełny dokument Syft → CycloneDX 1.6 JSON → gzip → `result.FullSBOM`, `FullSBOMFormat = share.FullSBOMFormatCycloneDX`. Kodowanie zaraz po Syft. `metadata.component`: `container`, nazwa `<host rejestru>/<repozytorium>`, wersja = digest; ścieżka tymczasowa nie trafia do dokumentu.
+- Limity: gzip > 32 MiB, `proto.Size(result)` > min(limit gRPC, 64 MiB) − 1 MiB, błąd albo panic = pole puste, WARN, skan bez błędu. `result.Digest` bez zmian. Inne ścieżki skanu bez zmian.
+**Pomiar:** debian:12 15 421 B gzip (165 KB JSON, 15 ms), druid 139 590 B (2,0 MB, 64 ms), n8n 226 280 B (3,0 MB, 123 ms). Maks. 0,7% limitu 32 MiB. Pamięć w granicach szumu.
+**Testy (według sesji):** `go test ./...` OK; `TestFullSBOM` (flaga, bez flagi, brak Syft, limit 32 MiB, limit gRPC, limit 64 MiB). Walidacja `specs/validate.py`: druid i n8n VALID; **debian:12 INVALID** – ID licencji `Artistic-dist`, `SMAIL-GPL` nie ma w `spdx.schema.json` z tagu CycloneDX 1.6 w `specs/` (nowsza lista SPDX w Syft). Dotyczy tylko dokumentu z S3 (dokument z kontrolera S3 klasyfikuje nieznane ID jako `license.name`).
+**Przeglądy (D17, według sesji):** /code-review 1: 7 uwag, poprawiono 5. /code-review 2: 5, poprawiono 2. /code-review 3: 7, poprawiono 4. /security-review: 0.
+**Otwarte sprawy:** push i obraz po zgodzie użytkownika; przegląd diff przez nadzorcę po push; nieznane ID licencji SPDX w dokumencie Syft (aktualizacja `specs/` albo zamiana nieznanych `id` na `name` w skanerze); ten sam limit gRPC wymagany w kontrolerze i skanerze; pominięcie SBOM widać tylko w logu skanera.
+
 ## 11. Decyzje czekające na człowieka
 
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
