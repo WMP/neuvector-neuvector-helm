@@ -42,6 +42,7 @@ NeuVector daje pełny inwentarz komponentów (SBOM) dla obrazów, działających
 | D24 | Podniesienia z bumpa neuvector w skanerze (decyzja nadzorcy, S6) | Zaakceptowane: `hashicorp/go-rootcerts` 1.0.2→1.1.0, `go.yaml.in/yaml/v3` 3.0.5→3.0.6. Źródło: `go.mod` upstream neuvector `c982a5e` (skaner miał neuvector `230e5ebe`, 8 commitów wcześniej). Każdy bump neuvector w skanerze je przyniesie, niezależnie od SBOM. |
 | D25 | Podgląd szablonu DT (decyzja nadzorcy, S5) | `POST /v1/sbom/dependency_track/preview` wymaga globalnego `sbom` do **zapisu**. Podgląd renderuje etykiety dowolnego poda i namespace, a potrzebuje go tylko osoba edytująca konfigurację DT. |
 | D26 | Format pełnego SBOM w S3 (decyzja nadzorcy, S8) | Skaner wysyła tylko CycloneDX JSON (pełny dokument Syft, gzip). Obiekt `<prefix>/<cluster>/images/<digest>.cdx.json.gz`. SPDX nie jest przechowywany w S3: endpoint SPDX zawsze generuje dokument z inwentarza. |
+| D27 | Podniesienie w skanerze przez S8a (decyzja nadzorcy, S8b) | Zaakceptowane: `github.com/CycloneDX/cyclonedx-go` 0.10.0 → 0.12.0 (indirect przez Syft). Źródło: `go.mod` neuvector od S3 (bezpośrednia zależność 0.12.0, wybrana w spike). Warunek: testy skanera przechodzą. |
 
 ## 3. Gdzie NV trzyma dane (odpowiedź na pytanie o miejsce na pliki SBOM)
 
@@ -437,7 +438,7 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
 - S3: rola własna z wszystkimi uprawnieniami odczytu (zapisana przed S3) automatycznie dostaje `sbom` (decyzja S3, `controller/access/access.go`, `getRolePermitValues`). Potwierdź przed PR upstream.
 - D22: Syft domyślnie włączony. Potwierdź przed PR upstream.
-- D24: 2 podniesienia z bumpa neuvector w skanerze. Potwierdź przed PR upstream.
+- D24, D27: 3 podniesienia w skanerze wynikające z `go.mod` neuvector (go-rootcerts, yaml/v3, cyclonedx-go). Potwierdź przed PR upstream.
 - S4: reguły admission z zakresem w federacji z klastrami starszych wersji nigdy nie pasują (bez błędu). Zdecyduj przed PR: wymaganie wersji albo blokada zakresu w regułach fed.
 - S6: Syft zwiększa pamięć skanera o 230–570 MB. Sprawdź limity pamięci poda skanera w helm przed wdrożeniem.
 - S8a: konfiguracja S3 (endpoint) wymaga tylko globalnego zapisu `sbom`, a nie `config` – rola z tym uprawnieniem może kierować żądania kontrolera na dowolny endpoint (SSRF, odpowiedzi nie wracają do wywołującego). Ten sam model co DT (S5). Potwierdź przed PR.
