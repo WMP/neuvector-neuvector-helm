@@ -85,7 +85,7 @@ S4, S5, S6 i S7 mogą działać równolegle po S3 (S6 tylko po S2). S8 po S3 i S
 ## S6: Syft w skanerze
 **Repozytorium:** `neuvector-scanner`.
 - `go get github.com/anchore/syft@v1.42.4`. Akceptowane podniesienia: tylko `hashicorp/go-version` i `mattn/go-runewidth`. Sprawdź diff `go.mod`: każde inne podniesienie = stop i pytanie do użytkownika.
-- `replace github.com/neuvector/neuvector => github.com/WMP/neuvector <commit z S2>`. `vendor/` w osobnym commicie.
+- `replace github.com/neuvector/neuvector => github.com/WMP/neuvector-neuvector <commit z S2>`. `vendor/` w osobnym commicie.
 - Katalog z twardymi dowiązaniami z mapy obrazu (`cvesearch.go:493-503`), tylko gdy `bFromRawData`. `directorysource` + katalogery z tagiem `image`, bez katalogerów plików. Import `_ "modernc.org/sqlite"`.
 - Scalanie według klucza z `HANDOFF.md` §4 (znormalizowany purl). Moduł NV wygrywa. Syft dodaje `Licenses`. Pakiety tylko z Syft: nowe moduły z `Origin=syft`, bez `Vuls`. Nie zmieniaj dopasowania CVE.
 - Testy: brak duplikatów dla jar (`groupId:artifactId` kontra Maven z Syft), python, go. Regresja: istniejąca reguła admission `modules` daje ten sam wynik przed i po S6 (moduły `Origin=syft` są pominięte w kontrolerze, `controller/cache/admission.go:1319`; ta jedna linia filtra należy do S6).
