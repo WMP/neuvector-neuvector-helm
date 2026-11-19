@@ -14,6 +14,24 @@ Pakiet zawiera katalog `specs/` (CycloneDX 1.6, SPDX 2.3, purl, skrypt `validate
 - Tagi obrazów: `controller`, `enforcer`, `scanner`, `manager` (format `<branch>-<sha>`).
 - Numer sesji (S1–S8) do sprawdzenia.
 
+## Obrazy NV do testów (stan 2026-11-19, 23:30 UTC)
+Wszystkie pakiety ghcr są publiczne (bez logowania).
+
+| Komponent | Obraz | Zawartość |
+|---|---|---|
+| controller | `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-0148fe3` | S2 + S3 + S4 + S5 + S8a (gałąź `claude/sbom-integration`) |
+| enforcer | `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-0148fe3` | jak wyżej |
+| scanner | `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f` | S6 (Syft, purl, licencje). **Bez S8b** (pełny SBOM do S3) – push S8b czeka na zgodę użytkownika. Po push: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s8-scanner-c27f6fe` |
+| manager | `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-e5c3238` | S7 A + B1 + B2 + C |
+
+Uwagi:
+- Skaner z S6 i kontroler z integracji są zgodne (pole flagi z S8a skaner S6 ignoruje). Testy S8 z pełnym SBOM w S3 wymagają skanera z S8b; bez niego S3 dostaje tylko konfigurację i listę (pustą).
+- Syft zwiększa pamięć skanera o 230–570 MB – ustaw limit pamięci poda skanera z zapasem (np. 3 Gi) albo sprawdź OOM.
+- Wyłączenie Syft: zmienna `SCANNER_DISABLE_SYFT=true` w podzie skanera.
+- DT: minimalna wersja 4.12.0 (zalecana ≥ 4.12.7); klucz API z BOM_UPLOAD, PROJECT_CREATION_UPLOAD, VIEW_PORTFOLIO, PORTFOLIO_MANAGEMENT; ingress DT z `proxy-body-size: "100m"`.
+- S4 admission: reguła musi mieć pełną nazwę NV, np. `org.apache.logging.log4j:log4j-core>=2.0.0<2.17.1` (kryterium `modules`).
+- Szczegóły API: `HANDOFF.md` §10.
+
 ## Obrazy testowe
 | Cel | Przykład (do wyboru przez organizatora) |
 |---|---|

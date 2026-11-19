@@ -451,6 +451,13 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 **Przeglądy (D17, według sesji):** /code-review 1: 7 uwag, poprawiono 5. /code-review 2: 5, poprawiono 2. /code-review 3: 7, poprawiono 4. /security-review: 0.
 **Otwarte sprawy:** push i obraz po zgodzie użytkownika; przegląd diff przez nadzorcę po push; nieznane ID licencji SPDX w dokumencie Syft (aktualizacja `specs/` albo zamiana nieznanych `id` na `name` w skanerze); ten sam limit gRPC wymagany w kontrolerze i skanerze; pominięcie SBOM widać tylko w logu skanera.
 
+### S9: Integracja neuvector – wynik (sesja `session_01Y1996xnte5eBWXJgPh7W8v`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-integration` w `neuvector-neuvector` (od `claude/sbom-s8-s3-storage`) = S0 CI + S2 + S3 (z łączeniem po purl) + S8a + merge S4 (`5b2f0a4`) + merge S5 (`e8ddf2e`) + 2 poprawki: `d3dfeb3` (brak pustego SBOM dla obrazu usuniętego z rejestru w trakcie odczytu z bazy), `0148fe3` (test mapowania URI dla S4 i S5). **Tylko do testów – nie do PR upstream.**
+**Konflikty** (rozwiązane przez zachowanie obu stron): `apis.yaml`; `access.go` (listy `CONST_API_SBOM`: S8a + S5); `share/clus_apis.go` (`SBOMStorage` i `DependencyTrack` w `CLUSSystemConfig`); `controller/api/apis.go`; `cache.go` (utrata lidera: `s3SweepReset` i `dtrackLeaderLost`); `config.go` (`s3store.Configure` i `dtrackConfigUpdate`); `marshal_test.go`.
+**Sprawdzenie nadzorcy:** brak znaczników konfliktów; `go.mod`/`go.sum`/`vendor/` jak w bazie; `go build ./...` OK; `go test ./controller/... ./share/... ./db/...` – wszystko OK. CI run 44629462228 i Fork test images run 44629462426: sukces.
+**Obrazy:** `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-0148fe3`, `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-0148fe3`.
+**Uwaga:** sesja nie wysłała raportu (zakończyła turę po przeglądzie); dane z commitów merge i z przeglądu nadzorcy.
+
 ## 11. Decyzje czekające na człowieka
 
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
