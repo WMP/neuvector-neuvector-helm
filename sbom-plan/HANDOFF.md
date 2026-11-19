@@ -368,6 +368,16 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 **Przeglądy (D17):** /code-review 1: 10 uwag, poprawiono 5. /code-review 2: 7, poprawiono 2. /code-review 3: 8, poprawiono 2. Pominięte m.in.: digest w `images` (S4 zwraca tylko `repo[:tag]`), strażnik trasy (kontroler zwraca 403), tylko pierwszy tag obrazu. /security-review: 0 HIGH/MEDIUM.
 **Otwarte sprawy:** wiersz obrazu z kilkoma tagami otwiera pierwszy tag; brak strażnika trasy `/components`; menu nie jest filtrowane ponownie po przełączeniu na klaster zdalny; obrazy działających podów bez linku (brak widoku obrazu runtime); brak testu w przeglądarce (TEST-RUNBOOK S7).
 
+### S7 (część B2): UI – ustawienia Dependency-Track – wynik (sesja `session_01Y199724PNuPQ5sBeo1XLqV`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s7-ui` w `neuvector-manager`, 4 commity, ostatni `fd677fe`. Obraz: `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-fd677fe`. Fork test images run 44617301541: sukces.
+- Proxy Scala: `GET`/`PATCH sbom/dependency_track`, `POST sbom/dependency_track/preview`. Logi tylko ze stałym tekstem (nadzorca sprawdził), treść JSON bez zmian (wzór istniejących tras).
+- Strona `routes/settings/dependency-track`, kafelek w ustawieniach (nieaktywny bez globalnego `sbom`). `PERMISSION_MAP.sbom_global_read`, `write_sbom`. Bez zapisu: tylko odczyt, bez „Save” i podglądu.
+- Klucz API: `type=password`, nigdy nie jest wypełniany; `api_key_set` → „API key saved”, „Remove key” (`api_key: ""`), „Keep the key”. Po zmianie URL klucz wymagany, gdy jest zapisany (reguła S5).
+- Podgląd: lista kontenerów (`AssetsHttpService.getContainers()`), wynik nazwa/wersja/tagi albo `skipped_reason`. Pomoc: symbole, tagi małymi literami, uprawnienia klucza DT, DT ≥ 4.12.0. Tłumaczenia en i zh_cn.
+**Testy:** `ng build --configuration production`, `ng lint`: OK. Karma 21/21 (A, B1, B2).
+**Przeglądy (D17):** /code-review 1: 8 uwag, poprawiono 7. /code-review 2: 8, poprawiono 5. /code-review 3: 9, poprawiono 3. /security-review: 0 HIGH/MEDIUM (klucz nie jest logowany i nie wraca do przeglądarki).
+**Otwarte sprawy:** `skipped_reason` tylko po angielsku; lista kontenerów w podglądzie bez stronicowania; brak strażnika trasy (kontroler 403); tłumaczenia zh_cn do przeglądu przez osobę znającą język; brak testu w przeglądarce i z żywym DT.
+
 ### S6: Syft w skanerze – wynik (sesja `session_01Y19971RUMrz1fHKj5EopAB`, przegląd nadzorcy: OK)
 **Co zrobiono:** gałąź `claude/sbom-s6-syft` w `neuvector-scanner` (od `claude/sbom-s0-ci-ghcr`, 6 commitów, ostatni `99ae74f`). Obraz: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f`. Workflow: sukces (uwaga: workflow unitest upstream nie uruchamia `go test`, bo `uname -p` = `unknown` na runnerze – problem istniejący).
 - `deps(go)` (`b62bae2`): Syft v1.42.4, `replace github.com/neuvector/neuvector => github.com/WMP/neuvector-neuvector v0.0.0-20261119181710-3a8b8792ee72` (S2). Podniesienia (nadzorca sprawdził `go.mod`): `go-version` 1.8.0, `go-runewidth` 0.0.19 (D2), `go-rootcerts` 1.1.0, `yaml/v3` 3.0.6 (D24). 182 nowe moduły.
