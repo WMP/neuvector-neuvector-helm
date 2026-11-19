@@ -180,6 +180,11 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | Nazwa właściciela z etykiet poda | `GetServiceFromPodLabels` | `neuvector/share/orchestration/kubernetes.go:354` |
 | Lista workloadów z RBAC | `CacheMethod.GetAllWorkloads` | `neuvector/controller/cache/cache.go:1213` |
 | Walidacja SBOM według schematu | `specs/validate.py` | ten pakiet |
+| purl modułu (z obliczaniem w locie dla starych raportów) | `scanUtils.ModulePurl(m, namespace)` | `neuvector/share/scan/purl.go` (S2) |
+| budowanie purl (ECMA-427) | `scanUtils.BuildPurl` | `neuvector/share/scan/purl.go` (S2) |
+| klucz scalania NV + Syft | `scanUtils.PurlMergeKey` | `neuvector/share/scan/purl.go` (S2) |
+| zapis raportu rejestru w limicie KV | `encodeScanReport` (niepubliczny) | `neuvector/controller/kv/helper.go` (S2) |
+| generowanie `*.pb.go` | protoc 3.5.1 + protoc-gen-go v1.0.0, `make -C share` | `neuvector/share/Makefile` |
 
 ## 9. Bezpieczeństwo
 
@@ -226,6 +231,25 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 - Nazwa API Syft do wyboru katalogerów `image` w bibliotece **[weryfikacja]** (w CLI: `--override-default-catalogers image`).
 **Przegląd:** 1× `/code-review` skryptów pomiarowych (S1 nie wysyła kodu do repozytorium): 6 uwag ważnych, 4 drobne. Poprawiono 7 (brak `Modules`, wyjątki w `nv2purl`, brak specyfikacji, stare pliki wyniku, `pipefail`, powód `opensslxx`, shebang). 1 bez zmiany: brak symlinków w katalogu to zamierzony przedmiot pomiaru. Pominięto 2 drobne (cudzysłowy w nazwie obrazu, `--json` bez wartości): skrypty dostają tylko stałe argumenty.
 **Nowe helpery:** brak w repozytoriach. Narzędzia pomiarowe w pakiecie: `spike/s1/s1purl.py` (`nv2purl`, `build_purl`, `merge_key`, test wektorów purl – wzór dla testów Go w S2; `SPECS` = ścieżka względna do pakietu), `spike/s1/run-image.sh`, `spike/s1/s1size/`, `spike/s1/scanner-instrument.patch`.
+
+### S2: Proto i purl – wynik (sesja `session_01Y1996yiCeBjitPLdze85mz`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s2-proto-purl` w `neuvector-neuvector` (od `claude/sbom-s0-ci-ghcr`, 8 commitów, ostatni `3a8b879`).
+- `share/scan.proto`, `ScanModule`: `Purl` (7), `Licenses` (8), `Origin` (9). `scan.pb.go` w osobnym commicie (`ad85a7a`): protoc 3.5.1 + protoc-gen-go v1.0.0. `vendor/` i `go.mod` bez zmian.
+- `share/scan/purl.go`: `BuildPurl`, `ModulePurl`, `PurlMergeKey` (port `s1purl.py`, bez nowych modułów Go). Wektory purl-spec i LICENSE (MIT) w `share/scan/testdata/purl/`.
+- Kontroler: `ModulePurl(m, namespace)` to jedno miejsce odczytu purl. Zwraca `m.Purl` albo liczy purl w locie. REST API bez zmian. Eksport SBOM w S3 używa tej funkcji.
+- Limit 512 KiB: `encodeScanReport` w `controller/kv/helper.go` (`PutRegistryImageSummaryAndReport`). Gdy gzip ≥ `cluster.KVValueSizeMax`, usuwa na kopii raportu kolejno: moduły `Origin=syft`, `Licenses`, `Purl`. Ostrzeżenie w logu.
+- Dopasowanie CVE i admission bez zmian.
+**API (`share/scan`, alias `scanUtils` w kontrolerze):**
+```go
+func BuildPurl(typ, namespace, name, version string, qualifiers map[string]string, subpath string) string // "" gdy typ lub name puste
+func ModulePurl(m *share.ScanModule, namespace string) string // m.Purl albo purl z Source/Name/Version; "" = brak poprawnego purl
+func PurlMergeKey(purl string) string // "type/namespace/name@version"; "" gdy purl niepoprawny
+```
+**Obrazy:** `ghcr.io/wmp/neuvector-controller:claude-sbom-s2-proto-purl-3a8b879`, `ghcr.io/wmp/neuvector-enforcer:claude-sbom-s2-proto-purl-3a8b879`. CI (unitest, golangci-lint, openapi-lint) run 44586186222: sukces. Fork test images run 44586186138: sukces.
+**Testy:** `go test ./share/... ./controller/...` OK. Nadzorca powtórzył `go test -count=1 ./share/scan/ ./controller/kv/`: OK (lokalnie wymaga `libpcre3-dev`). TestPurlModule (30 przypadków), TestPurlMergeKey, TestPurlOfficialVectors (12 typów), TestPurlOldGobCompat, TestPurlOldProtoCompat, TestEncodeScanReport.
+**Decyzje:** status „niepewny” nie jest zwracany, „niemożliwy” = pusty string. Odstępstwa od `s1purl.py`: R – nazwa po ostatnim `-`; jar – brak purl, gdy nazwa ma spację (też vendor); golang – brak purl dla ścieżek lokalnych, wersja stdlib obcięta przed spacją (`X:boringcrypto`); `kubernetes`/`openshift` → `pkg:generic/<źródło>`; `PurlMergeKey` zmienia nazwę cran na małe litery. `nginx`/`openssl` jako aplikacje dają `pkg:generic/...`: usuwanie duplikatów w SBOM należy do S3. Raport nadal za duży po 3 krokach: zachowanie jak przed zmianą.
+**Przeglądy (D17):** /code-review 1: 9 uwag, poprawiono 3. /code-review 2: 7 uwag, poprawiono 3. /code-review 3: 7 uwag, poprawiono 3. Pominięte: problemy istniejące (raport za duży po 3 krokach, limit transakcji Consul), zakres S6 (parsery, filtr admission), zgodność z planem (klucz bez epoki rpm, typ bitnami). /security-review: 0. **Uwaga dla S3:** segmenty `..` w namespace purl zostają w napisie; nie używaj purl jako ścieżki pliku ani URL.
+**Otwarte sprawy:** limit transakcji Consul (`txn_max_req_len` po base64) **[weryfikacja na klastrze]**; raport za duży po 3 krokach ginie bez błędu (problem istniejący, osobny PR: `putGZipKVChunks` dla rejestru); dokładność purl deb/apk/jar/composer/R – S6 (D19); typ `bitnami` **[weryfikacja]**.
 
 ## 11. Decyzje czekające na człowieka
 
