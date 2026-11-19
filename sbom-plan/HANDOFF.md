@@ -203,6 +203,9 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | Szablony projektu DT (walidacja, renderowanie) | `dtrack.ValidateTemplates`, `dtrack.Render`, `dtrack.WithDefaults` | `neuvector/controller/sbom/dtrack/` (S5) |
 | Klient i kolejka DT | `dtrack.Client`, `dtrack.NewUploader` | `neuvector/controller/sbom/dtrack/` (S5) |
 | Moduły obrazu z rejestru bez RBAC (tylko wewnętrznie) | `scan.RegistryImageModules(imageID)` | `neuvector/controller/scan/interface.go` (S5) |
+| Syft na obrazie bez drugiego pobierania (katalog dowiązań, limit czasu) | `startSyft`, `waitSyft`, `runSyft`, `buildSyftTree` | `neuvector-scanner/cvetools/syft.go` (S6) |
+| Scalanie NV + Syft | `mergeSyftModules` | `neuvector-scanner/cvetools/syft.go` (S6) |
+| Porównanie raportu skanera z `syft registry:` | `spike/s6/cmp_after.py` | ten pakiet (S6) |
 
 ## 9. Bezpieczeństwo
 
@@ -354,6 +357,35 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 **Przeglądy (D17):** /code-review 1: 10 uwag, poprawiono 7 (m.in. kradzież klucza przez zmianę URL). /code-review 2: 9 uwag, poprawiono 7. /code-review 3: 8 uwag, poprawiono 5. Pominięte: wyścig na `syncInitDone` (wzór `isLeader()`), osierocone projekty i odświeżanie SBOM (otwarte sprawy, komentarze `shortcut:`), nil-check w innych miejscach `repoScanRegistry` (istniejący). /security-review: 0 HIGH/MEDIUM; LOW (kolizja projektów przy szablonie tylko z etykiet poda) pominięta.
 **Otwarte sprawy:** projekty wysłane przed restartem/zmianą lidera/zmianą konfiguracji nigdy nie dostają „inactive” (bezpieczne, ale zostają; rozwiązanie: klucze w KV). SBOM w DT odświeżany tylko po zmianie digest albo restarcie (rozwiązanie: hash modułów). Etykiety Deployment niedostępne (§5). Konfiguracja tylko przez REST (bez helm).
 
+### S6: Syft w skanerze – wynik (sesja `session_01Y19971RUMrz1fHKj5EopAB`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s6-syft` w `neuvector-scanner` (od `claude/sbom-s0-ci-ghcr`, 6 commitów, ostatni `99ae74f`). Obraz: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f`. Workflow: sukces (uwaga: workflow unitest upstream nie uruchamia `go test`, bo `uname -p` = `unknown` na runnerze – problem istniejący).
+- `deps(go)` (`b62bae2`): Syft v1.42.4, `replace github.com/neuvector/neuvector => github.com/WMP/neuvector-neuvector v0.0.0-20261119181710-3a8b8792ee72` (S2). Podniesienia (nadzorca sprawdził `go.mod`): `go-version` 1.8.0, `go-runewidth` 0.0.19 (D2), `go-rootcerts` 1.1.0, `yaml/v3` 3.0.6 (D24). 182 nowe moduły.
+- purl (D19): `feature2Module` ustawia `Purl` przez `scan.ModulePurl` dla każdego modułu. dpkg: wersja binarna (`Version:`), apk: nazwa binarna (`P:`) – tylko dla purl (`FeatureVersion.PurlName`, `PurlVersion`). `Name`/`Version` do CVE bez zmian (nadzorca sprawdził diff parserów).
+- Syft (`cvetools/syft.go`): tylko skan obrazu z warstwami na dysku (`bFromRawData`), pominięty przy `-maxrec` > 0. Katalog `imgPath/syft-*`: tylko katalogi i twarde dowiązania do zwykłych plików (`Lstat`), nigdy symlinki. `directorysource` (`Base = root`), katalogery z tagiem `image`. Równolegle ze skanem CVE.
+- Scalanie (`mergeSyftModules`, `PurlMergeKey`): moduł NV wygrywa, Syft dodaje `Licenses`. apk z Syft scalany z modułem origin. Jar NV dostaje purl z Syft przy dopasowaniu po pliku i wersji (1 pakiet Syft w pliku). Pakiety tylko z Syft: `Origin=syft`, `Source` = typ Syft, bez `Vuls`. Dopasowanie CVE bez zmian.
+- Wyłączenie: zmienna `SCANNER_DISABLE_SYFT` (`strconv.ParseBool`), domyślnie Syft włączony (D22). Limit 300 s (katalog + Syft), twardy termin czekania 310 s; błąd/timeout/panic = skan bez danych Syft. Bez importu `_ "modernc.org/sqlite"` (sterownik rejestruje już `glebarez/go-sqlite`; drugi import = panic).
+**Pomiar** (standalone, 4 vCPU, baza CVE 4.329 z ręcznym `cosign verify`):
+
+| Obraz | ScanImage przed / po [s] | Syft [s] | gzip przed → po [B] | % z 512 KiB | Zgodność z `syft registry:` | Max RSS przed → po [MB] |
+|---|---|---|---|---|---|---|
+| debian:12 | 7,0 / 7,3 | 1,6 | 7 232 → 9 805 | 1,9% | 97,8% | ~1320 → ~1575 |
+| log4shell | 5,8 / 5,6 | 1,6 | 8 721 → 10 179 | 1,9% | 98,9% | ~1250 → ~1510 |
+| node-exporter v1.8.2 | 2,8 / 3,0 | 1,1 | 4 773 → 5 247 | 1,0% | 97,9% | ~1085 → ~1335 |
+| druid 30.0.1 | 17,3 / 19,9 | 5,7 | 46 390 → 61 354 | 11,7% | 98,4% | ~1610 → ~2005 |
+| n8n 1.64.0 | 26,1 / 41,3 | 7,3 | 60 400 → 76 780 | 14,6% | 99,6% | ~1325 → ~1895 |
+| **Razem** | | | | **maks. 14,6%** | **99,1%** (2497/2520), pokrycie Syft 99,96% | |
+
+Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`generic/bash`, `gzip` – brak symlinka usrmerge), node-exporter (busybox – `TypeLink` w tar). Licencje: debian12 86/90, log4shell 80/106, druid 964/1345, n8n 1937/1975 modułów.
+**Testy:** `go test ./...` OK (nadzorca powtórzył `cvetools`, `detectors`, `common`: OK). Testy m.in.: katalog bez symlinków (także `-> /etc/passwd`), `..` nie wychodzi poza katalog, katalogery `image` (npm bez lockfile), limit czasu, brak duplikatów jar/python/go/deb/apk, jar shaded, licencje SPDX.
+**Przeglądy (D17):** /code-review 1: 10 uwag, poprawiono 6 (+1 własna). /code-review 2: 8 uwag, poprawiono 8 (+2 własne). /code-review 3: 5 uwag, poprawiono 4. Pominięte: `replace` na fork (plan), D22, `Source` = typ Syft, problemy istniejące (apk bez pustej linii, dpkg `hold`). /security-review: 0 podatności.
+**Otwarte sprawy:**
+- Panic w goroutine katalogera Syft może zakończyć proces skanera (DoS; `recover` łapie tylko goroutine wywołującą). Po terminie goroutine Syft działa do końca i sama usuwa katalog.
+- **Pamięć skanera +230–570 MB RSS**, n8n +15 s – sprawdzić limity pamięci poda skanera w helm (TEST-RUNBOOK S6).
+- Ten sam purl w kilku modułach (pom + MANIFEST, wiele lokalizacji) – deduplikacja po purl w `sbom.Components` zlecona S3 (uzupełnienie).
+- Potrzebne zmiany w `share/scan` (osobna sesja/PR): źródło metadanych jar (pom/MANIFEST), jar zagnieżdżony 2+ poziomy, vendor composer, `TypeLink`/`TypeSymlink` w `ExtractAllArchive` (busybox).
+- Problemy istniejące (osobne PR skanera): dpkg `hold ok installed` pomijany; workflow unitest (`uname -p` → `uname -m`).
+- Dla S8: `runSyft` zwraca tylko `[]pkg.Package`; pełny SBOM wymaga `*sbom.SBOM`.
+
 ## 11. Decyzje czekające na człowieka
 
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
@@ -361,3 +393,4 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 - D22: Syft domyślnie włączony. Potwierdź przed PR upstream.
 - D24: 2 podniesienia z bumpa neuvector w skanerze. Potwierdź przed PR upstream.
 - S4: reguły admission z zakresem w federacji z klastrami starszych wersji nigdy nie pasują (bez błędu). Zdecyduj przed PR: wymaganie wersji albo blokada zakresu w regułach fed.
+- S6: Syft zwiększa pamięć skanera o 230–570 MB. Sprawdź limity pamięci poda skanera w helm przed wdrożeniem.
