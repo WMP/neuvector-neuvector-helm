@@ -203,3 +203,23 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 **Otwarte sprawy:** stare tagi w ghcr nie są usuwane automatycznie.
 **Wnioski dla nadzorcy:** sesje potomne nie dostają przydzielonej gałęzi, a `add_repo` z dostępem push może zostać odrzucony przez tryb auto (w S0 dostęp do skanera dodał użytkownik). Repozytorium, do którego sesja ma pisać, podawaj jako `source_url`.
 **Nowe helpery:** brak.
+
+### S1: Spike purl, Syft, dowiązania, rozmiar – wynik (sesja `session_01Y1996zbWayQibUKXwwFQ9A`, przegląd nadzorcy: OK)
+**Co zrobiono:** tabela `Source`+`Name` → purl dla wszystkich ekosystemów NV, sprawdzona oficjalnymi wektorami `specs/purl/tests/` (0 błędów; nadzorca powtórzył `python3 -I spike/s1/s1purl.py selftest`). Skaner standalone z lokalną łatką pomiarową i `syft` v1.42.4 na 5 publicznych obrazach (`debian:12`, `ghcr.io/christophetd/log4shell-vulnerable-app` (Alpine + Java + log4j-core 2.14.1), `quay.io/prometheus/node-exporter:v1.8.2` (Go), `apache/druid:30.0.1` (jar), `n8nio/n8n:1.64.0` (npm)). Test katalogu z twardymi dowiązaniami. Pomiar `ScanResult` z polami `Purl`, `Licenses`, `Origin` w serializacji KV (gob + gzip). Szczegóły i polecenia: `spike/S1-RESULTS.md`. Skrypty: `spike/s1/`.
+**Wyniki:**
+- Zgodność NV z Syft (klucz purl bez kwalifikatorów): razem **84,9%** (2274 wspólne z 2679). Obrazy: debian12 74,3%, log4shell 39,1%, node-exporter 95,7%, druid 71,7%, n8n 97,1%. Typy: npm 98,2%, golang 97,8%, deb 77,6%, maven 68,1%, apk 48,2%.
+- Przyczyny różnic: deb – NV ma wersję pakietu źródłowego (`+bN`, epoka); apk – NV ma nazwę origin zamiast nazwy binarnej; jar – NV tworzy 2 moduły na plik (z `pom.properties` i z `MANIFEST.MF`), moduły z MANIFEST nie są współrzędnymi maven; Syft dodaje moduł główny Go i binarki (`generic`).
+- Katalog z twardymi dowiązaniami: przy katalogerach `image` Syft gubi 1 pakiet na 2513 (busybox – twarde dowiązanie w tar). Z domyślnymi katalogerami katalogu gubi 1471 z 1489 pakietów npm (n8n).
+- Rozmiar w KV (gzip): maksimum **76 936 B = 14,7% z 512 KiB** (n8n, 1985 modułów, 753 CVE). druid: 61 899 B (11,8%). Nowe pola: +28–36%. Szacunek (liniowy): limit przy około 12 000–13 500 modułach.
+**Decyzje (zalecenia S1; zakres S2/S6 czeka na decyzję użytkownika):**
+- Limit 512 KB **nie wymaga skracania** danych. Dodać zabezpieczenie: przed zapisem raportu rejestru (`txn.PutBinary` pomija za duży wpis po cichu, `share/cluster/intfs.go:756-767`, sprawdzone przez nadzorcę) usuwać kolejno moduły `Origin=syft`, `Licenses`, `Purl`. Bez `Hashes` w KV.
+- purl liczony w skanerze (`feature2Module`), bo tylko skaner zna wersję binarną deb, nazwę binarną apk i źródło jar.
+- S6: katalogery Syft z tagiem `image`. Katalog z twardymi dowiązaniami bez symlinków.
+**Otwarte sprawy:**
+- **Bezpieczeństwo:** `scripts/ghcr-vulndb-artifact.sh` (upstream, używany w S0) sprawdza podpis w trybie fail-open (`$(...)` bez `inherit_errexit`). Nadzorca potwierdził mechanizm testem bash. Dowód w `S1-RESULTS.md` §8. Zgłoszenie do upstream: decyzja użytkownika.
+- **Bezpieczeństwo:** Syft `directorysource` idzie za absolutnym symlinkiem do plików hosta. S6 nie może dodawać absolutnych symlinków do katalogu skanu.
+- `ExtractAllArchive` nie rozpakowuje `TypeLink` (twarde dowiązania tar) ani `TypeSymlink` (`share/utils/extract.go:160-177`, sprawdzone przez nadzorcę). NV nie widzi przez to np. busybox. Osobny PR.
+- Nie zmierzono na danych: rpm, python, ruby, .NET, php, R, bitnami, moduł k8s (`ingress-nginx`). Namespace Syft dla `rhcos`, `suse-liberty`, `sl-micro` **[weryfikacja]**. Typ purl `bitnami` brak w `specs/` **[weryfikacja]**.
+- Nazwa API Syft do wyboru katalogerów `image` w bibliotece **[weryfikacja]** (w CLI: `--override-default-catalogers image`).
+**Przegląd:** 1× `/code-review` skryptów pomiarowych (S1 nie wysyła kodu do repozytorium): 6 uwag ważnych, 4 drobne. Poprawiono 7 (brak `Modules`, wyjątki w `nv2purl`, brak specyfikacji, stare pliki wyniku, `pipefail`, powód `opensslxx`, shebang). 1 bez zmiany: brak symlinków w katalogu to zamierzony przedmiot pomiaru. Pominięto 2 drobne (cudzysłowy w nazwie obrazu, `--json` bez wartości): skrypty dostają tylko stałe argumenty.
+**Nowe helpery:** brak w repozytoriach. Narzędzia pomiarowe w pakiecie: `spike/s1/s1purl.py` (`nv2purl`, `build_purl`, `merge_key`, test wektorów purl – wzór dla testów Go w S2; `SPECS` = ścieżka względna do pakietu), `spike/s1/run-image.sh`, `spike/s1/s1size/`, `spike/s1/scanner-instrument.patch`.

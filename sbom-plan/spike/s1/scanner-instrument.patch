@@ -1,0 +1,101 @@
+diff --git a/cmd/scanner/standalone.go b/cmd/scanner/standalone.go
+index 66d38b1..0eead91 100644
+--- a/cmd/scanner/standalone.go
++++ b/cmd/scanner/standalone.go
+@@ -113,6 +113,15 @@ func parseTagOrDigest(name string) (string, string) {
+ func writeResultToFile(req *share.ScanImageRequest, result *share.ScanResult, err error, cvedb scanUtils.CVELookup) {
+ 	var rptData scanOnDemandReportData
+
++	// spike instrumentation: dump the raw scan result
++	if rawOut := os.Getenv("S1_RAW_OUT"); rawOut != "" && result != nil {
++		if b, e := json.Marshal(result); e != nil {
++			log.Error("S1_RAW_OUT marshal: ", e)
++		} else if e := os.WriteFile(rawOut, b, 0o644); e != nil {
++			log.Error("S1_RAW_OUT write: ", e)
++		}
++	}
++
+ 	switch {
+ 	case result == nil:
+ 		if err != nil {
+diff --git a/cvetools/cvesearch.go b/cvetools/cvesearch.go
+index 0985025..903dd14 100644
+--- a/cvetools/cvesearch.go
++++ b/cvetools/cvesearch.go
+@@ -505,6 +505,7 @@ func (cv *ScanTools) ScanImage(ctx context.Context, req *share.ScanImageRequest,
+ 				}
+ 			}
+ 		}
++		s1LinkTree(fileMap)
+ 	} else {
+ 		// build an absrtact map from records
+ 		log.Info("generate image map")
+@@ -1699,3 +1700,42 @@ func getSatisfiedSignatureVerifiersForImage(rc *scan.RegClient, req *share.ScanI
+
+ 	return sigInfo, share.ScanErrorCode_ScanErrNone, nil
+ }
++
++// s1LinkTree (spike instrumentation) hard-links the merged image files into $S1_LINKDIR.
++func s1LinkTree(fileMap map[string]string) {
++	root := os.Getenv("S1_LINKDIR")
++	if root == "" {
++		return
++	}
++	root = filepath.Clean(root)
++	var dirs, links, skipped, errs int
++	for in, real := range fileMap {
++		dst := filepath.Join(root, in)
++		if dst != root && !strings.HasPrefix(dst, root+string(filepath.Separator)) {
++			errs++
++			continue
++		}
++		fi, err := os.Lstat(real)
++		switch {
++		case err != nil:
++			errs++
++		case fi.IsDir():
++			if os.MkdirAll(dst, 0o755) != nil {
++				errs++
++			} else {
++				dirs++
++			}
++		case fi.Mode().IsRegular():
++			if os.MkdirAll(filepath.Dir(dst), 0o755) != nil {
++				errs++
++			} else if err := os.Link(real, dst); err != nil && !os.IsExist(err) {
++				errs++
++			} else {
++				links++
++			}
++		default:
++			skipped++
++		}
++	}
++	log.WithFields(log.Fields{"dirs": dirs, "links": links, "skipped": skipped, "errors": errs}).Info("S1_LINKDIR built")
++}
+diff --git a/vendor/github.com/neuvector/neuvector/share/scan.pb.go b/vendor/github.com/neuvector/neuvector/share/scan.pb.go
+index 5917788..a6445af 100644
+--- a/vendor/github.com/neuvector/neuvector/share/scan.pb.go
++++ b/vendor/github.com/neuvector/neuvector/share/scan.pb.go
+@@ -436,12 +436,15 @@ func (m *ScanLayerResult) GetSecrets() *ScanSecretResult {
+ }
+
+ type ScanModule struct {
+-	Name    string           `protobuf:"bytes,1,opt,name=Name" json:"Name,omitempty"`
+-	Version string           `protobuf:"bytes,2,opt,name=Version" json:"Version,omitempty"`
+-	Source  string           `protobuf:"bytes,3,opt,name=Source" json:"Source,omitempty"`
+-	Vuls    []*ScanModuleVul `protobuf:"bytes,4,rep,name=Vuls" json:"Vuls,omitempty"`
+-	CPEs    []string         `protobuf:"bytes,5,rep,name=CPEs" json:"CPEs,omitempty"`
+-	File    string           `protobuf:"bytes,6,opt,name=File" json:"File,omitempty"`
++	Name     string           `protobuf:"bytes,1,opt,name=Name" json:"Name,omitempty"`
++	Version  string           `protobuf:"bytes,2,opt,name=Version" json:"Version,omitempty"`
++	Source   string           `protobuf:"bytes,3,opt,name=Source" json:"Source,omitempty"`
++	Vuls     []*ScanModuleVul `protobuf:"bytes,4,rep,name=Vuls" json:"Vuls,omitempty"`
++	CPEs     []string         `protobuf:"bytes,5,rep,name=CPEs" json:"CPEs,omitempty"`
++	File     string           `protobuf:"bytes,6,opt,name=File" json:"File,omitempty"`
++	Purl     string           `protobuf:"bytes,7,opt,name=Purl" json:"Purl,omitempty"`
++	Licenses []string         `protobuf:"bytes,8,rep,name=Licenses" json:"Licenses,omitempty"`
++	Origin   string           `protobuf:"bytes,9,opt,name=Origin" json:"Origin,omitempty"`
+ }
+
+ func (m *ScanModule) Reset()                    { *m = ScanModule{} }
