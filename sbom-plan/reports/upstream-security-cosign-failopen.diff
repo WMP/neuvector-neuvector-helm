@@ -1,0 +1,38 @@
+--- /home/user/neuvector-scanner/scripts/ghcr-vulndb-artifact.sh	2026-11-19 14:25:45.536119396 +0000
++++ fixed.sh	2026-11-19 17:55:13.947688289 +0000
+@@ -105,7 +105,7 @@
+   local identity
+ 
+   prefix=$(repo_prefix)
+-  digest=$(crane digest "$tag_ref")
++  digest=$(crane digest "$tag_ref") || return 1
+   digest_ref="${prefix}/${artifact_name}@${digest}"
+ 
+   oidc_issuer="${COSIGN_CERTIFICATE_OIDC_ISSUER:-https://token.actions.githubusercontent.com}"
+@@ -114,7 +114,7 @@
+   cosign verify \
+     --certificate-oidc-issuer="$oidc_issuer" \
+     --certificate-identity="$identity" \
+-    "$digest_ref" >&2
++    "$digest_ref" >&2 || return 1
+ 
+   printf '%s\n' "$digest_ref"
+ }
+@@ -128,7 +128,7 @@
+ 
+   prefix=$(repo_prefix)
+   tag_ref="${prefix}/${artifact_name}:${version}"
+-  digest_ref=$(resolve_and_verify "$artifact_name" "$tag_ref")
++  digest_ref=$(resolve_and_verify "$artifact_name" "$tag_ref") || exit 1
+   echo "Verified: $digest_ref"
+ }
+ 
+@@ -152,7 +152,7 @@
+   fi
+ 
+   # Resolve tag to digest, verify signature, then pull the same digest (TOCTOU-safe, fail closed)
+-  digest_ref=$(resolve_and_verify "$artifact_name" "$tag_ref")
++  digest_ref=$(resolve_and_verify "$artifact_name" "$tag_ref") || exit 1
+ 
+   temp_dir=$(mktemp -d)
+   trap "rm -rf -- '$temp_dir'" EXIT
