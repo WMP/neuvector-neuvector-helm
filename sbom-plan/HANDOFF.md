@@ -194,6 +194,8 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | Kontrola dostępu do rejestru i obrazu | `resolveRegistry`, `authorizeRegistryImage` (niepubliczne) | `neuvector/controller/scan/interface.go` (S3) |
 | Klasyfikacja licencji SPDX | `classifyLicense` (niepubliczne) | `neuvector/controller/sbom/license.go` (S3) |
 | Wspólne kroki handlerów SBOM (RBAC, format, odpowiedź) | `sbomPrepare`, `sbomRespond`, `sbomRespErr` | `neuvector/controller/rest/sbom.go` (S3) |
+| UI: panel SBOM (lista komponentów, filtr, pobieranie) | `SbomPanelModule` / `app-sbom-panel` (wejścia `url`, `params`, `name`, `tableHeight`), `cdxToRows`, `sbomFileName` | `neuvector-manager/admin/webapp/websrc/app/routes/components/sbom-panel/` (S7) |
+| UI: proxy SBOM do kontrolera | `PolicyService.getSbom(tokenId, segments, format)` | `neuvector-manager/admin/src/main/scala/com/neu/service/policy/PolicyService.scala` (S7) |
 
 ## 9. Bezpieczeństwo
 
@@ -295,6 +297,18 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 - Moduły `Origin=syft` nie trafiają do SBOM workloadu (agent nie uruchamia Syft). SBOM obrazu je zawiera.
 - DT (S5) potrzebuje odchudzonego CycloneDX: dziś `Write` daje pełny dokument.
 - Lokalny golangci-lint: zbuduj Go 1.27 (`GOTOOLCHAIN=go1.27.4 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0`).
+
+### S7 (część A): UI – zakładka SBOM i uprawnienie – wynik (sesja `session_01Y199724PNuPQ5sBeo1XLqV`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s7-ui` w `neuvector-manager` (od `claude/sbom-s0-ci-ghcr`, 4 commity, ostatni `25b0950`).
+- Proxy Scala (`PolicyApi.scala`, `PolicyService.getSbom`): `GET scan/workload/sbom?id&format`, `scan/host/sbom?id&format`, `scan/registry/image/sbom?name&imageId&format` → `/v1/scan/.../sbom`. Każda wartość kodowana (`URLEncoder`, `+`→`%20`). Odpowiedź kontrolera bez zmian. Nadzorca sprawdził: ścieżka z `..` trafia do kontrolera z tokenem tego samego użytkownika (RBAC w kontrolerze), bez eskalacji.
+- Komponent `components/sbom-panel`: CycloneDX jako tekst, ag-grid (nazwa, wersja, purl, licencje, runtime z `neuvector:runtime=true`), filtr (`QuickFilterService`), pobieranie CycloneDX (ten sam tekst) i SPDX (drugie żądanie), `file-saver`. 404 → „Brak wyniku skanu”, inny błąd → „Nie udało się pobrać SBOM”.
+- Zakładka „SBOM” (ostatnia) w szczegółach workloadu, węzła i w dialogu obrazu z rejestru (także `all`).
+- RBAC w UI: `PERMISSION_MAP.sbom = ['sbom_r','sbom_w']`, `authUtils.getDisplayFlag('sbom')`. Bez `sbom` zakładka ukryta. Edytor ról: `sbom` w `permission.service.ts`, tłumaczenia en i zh_cn.
+**Obraz:** `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-25b0950`. Fork test images run 44604311861: sukces (build obejmuje kompilację Scala).
+**Decyzje:** manager nie ma widoku szczegółów obrazu runtime, więc `/v1/scan/image/:id/sbom` nie ma zakładki; SBOM obrazu jest w dialogu rejestru. Lista komponentów z dokumentu CycloneDX, bez nowego endpointu.
+**Testy:** `ng build --configuration production`, `ng lint`, Prettier: OK. Karma (ChromeHeadless): 5/5 testów SBOM (pełny zestaw spec projektu nie kompiluje się – problem istniejący). Scala lokalnie bez sbt; kompilację potwierdza CI.
+**Przeglądy (D17):** /code-review 1: 6 uwag, poprawiono 4. /code-review 2: 5 uwag, poprawiono 3. /code-review 3: 4 uwagi, poprawiono 2. Pominięte: wysokość gridu (jak istniejące), kodowanie ścieżki (httprouter dekoduje), kontener zakończony (otwarta sprawa). /security-review: 0 HIGH/MEDIUM.
+**Otwarte sprawy:** kontener zakończony – zakładka pokazuje „Brak wyniku skanu” (do decyzji: ukryć albo inny komunikat). Brak sprawdzenia w przeglądarce z prawdziwym kontrolerem (TEST-RUNBOOK S7). Panel czyta tylko `components` pierwszego poziomu. Część B (Components z S4, ustawienia DT z S5) – po S4 i S5.
 
 ## 11. Decyzje czekające na człowieka
 
