@@ -339,7 +339,7 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 - Admission wymaga pełnej nazwy NV (jar: `org.apache.logging.log4j:log4j-core>=2.0.0<2.17.1`). Samo `log4j-core` działa tylko w wyszukiwaniu.
 
 ### S5: Dependency-Track – wynik (sesja `session_01Y19971rN5EokWvWw9am8Lz`, przegląd nadzorcy: OK)
-**Co zrobiono:** gałąź `claude/sbom-s5-dependency-track` w `neuvector-neuvector` (od `claude/sbom-s3-export-rbac`, 9 commitów + zmiana D25, ostatni sprawdzony `0f3a48a`). Bez nowych modułów Go.
+**Co zrobiono:** gałąź `claude/sbom-s5-dependency-track` w `neuvector-neuvector` (od `claude/sbom-s3-export-rbac`, 10 commitów, ostatni `f5144ec` – D25; obrazy `ghcr.io/wmp/neuvector-{controller,enforcer}:claude-sbom-s5-dependency-track-f5144ec`, CI run 44613205380: sukces). Bez nowych modułów Go.
 - Konfiguracja: `CLUSSystemConfig.DependencyTrack` (`share.CLUSDependencyTrack`): `enabled`, `url`, `api_key` (tag `cloak`), `project_name`, `project_version`, `tags`, `inactive_grace_period` (min, domyślnie 1440). Domyślnie wyłączona.
 - REST: `GET /v1/sbom/dependency_track` (globalny `sbom` odczyt; zwraca `api_key_set`, nigdy klucza) i `PATCH` (globalny `sbom` zapis; pola opcjonalne; `api_key: ""` usuwa klucz). 400: zły URL (tylko http/https, bez userinfo/query/fragmentu), `enabled` bez URL/klucza, **nowy URL bez nowego `api_key`** (ochrona klucza), zły szablon (nieznany symbol, nawiasy, znaki sterujące, >1024), tagi (przecinek, puste, >50).
 - Pakiet `controller/sbom/dtrack`: szablony (`strings.NewReplacer`, jeden przebieg), klient (multipart `POST /api/v1/bom`, lookup, `PATCH active`, bez przekierowań), `Uploader` (1 worker, deduplikacja, backoff 30 s → 30 min, 8 prób; 413 i 4xx bez ponowień).
