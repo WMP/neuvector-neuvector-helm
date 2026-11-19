@@ -207,6 +207,10 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | Syft na obrazie bez drugiego pobierania (katalog dowiązań, limit czasu) | `startSyft`, `waitSyft`, `runSyft`, `buildSyftTree` | `neuvector-scanner/cvetools/syft.go` (S6) |
 | Scalanie NV + Syft | `mergeSyftModules` | `neuvector-scanner/cvetools/syft.go` (S6) |
 | Porównanie raportu skanera z `syft registry:` | `spike/s6/cmp_after.py` | ten pakiet (S6) |
+| Magazyn pełnych SBOM w S3 (klucz, walidacja, właściciel, Put/Open/Owned/List/Delete) | `s3store.New`, `s3store.Validate`, `s3store.ValidDigest`, `s3store.Configure`, `s3store.Current` | `neuvector/controller/sbom/s3store/s3store.go` (S8a) |
+| Fałszywy serwer S3 do testów | `s3fake.New` | `neuvector/controller/sbom/s3store/s3fake` (S8a) |
+| Digesty obrazów wszystkich rejestrów bez RBAC (tylko wewnętrznie) | `scan.RegistryImageDigests` | `neuvector/controller/scan/sbom_s3.go` (S8a) |
+| Obrazy rejestrów o danych digest z RBAC | `scanner.GetRegistryImagesByDigest` | `neuvector/controller/scan/sbom_s3_rest.go` (S8a) |
 
 ## 9. Bezpieczeństwo
 
@@ -407,6 +411,27 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 - Problemy istniejące (osobne PR skanera): dpkg `hold ok installed` pomijany; workflow unitest (`uname -p` → `uname -m`).
 - Dla S8: `runSyft` zwraca tylko `[]pkg.Package`; pełny SBOM wymaga `*sbom.SBOM`.
 
+### S8a: Magazyn S3 – kontroler – wynik (sesja `session_01Y19972i6GRVGCT7x7PS6jQ`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s8-s3-storage` w `neuvector-neuvector` (od `claude/sbom-s3-export-rbac` `0f61914`, 11 commitów, ostatni `84ebcea`). Obrazy `ghcr.io/wmp/neuvector-{controller,enforcer}:claude-sbom-s8-s3-storage-84ebcea`. CI run 44625822533 i Fork test images run 44625822639: sukces. `go.mod` bez zmian (nadzorca sprawdził); `vendor/` tylko pakiety `service/s3` z `aws-sdk-go` v1.55.7 (`9554983`).
+- **Proto (dla S8b):** `ScanImageRequest.IncludeFullSBOM` (13), `ScanResult.FullSBOM` (29, gzip), `ScanResult.FullSBOMFormat` (30, `share.FullSBOMFormatCycloneDX` = `cyclonedx-json`). Kod generowany: `c19e089`. Skaner: `replace github.com/neuvector/neuvector => github.com/WMP/neuvector-neuvector v0.0.0-20261119220907-84ebcea44eb3`.
+- **Kontrakt skanera:** flaga tylko przy włączonym S3, tylko w skanach rejestru i przy niepustym digest. Przy fladze: pełny CycloneDX JSON z Syft, gzip, ≤ 32 MiB (`s3store.MaxObjectSize`), cała wiadomość < 64 MiB gRPC. Za duży/błąd/brak Syft: pole puste, skan bez błędu. `result.Digest` musi być równy digest z listy rejestru.
+- **Konfiguracja** `CLUSSystemConfig.SBOMStorage` (`sbom_s3`): `enabled`, `endpoint`, `region`, `bucket`, `prefix`, `path_style`, `access_key`, `secret_key` (`cloak`), `delete_unused` (false), `delete_grace_period` (min, 0 = 1440). Puste klucze = łańcuch AWS SDK (IRSA). REST `GET/PATCH /v1/sbom/s3` (globalny `sbom`, PATCH = zapis; zmiana endpointu wymaga nowego `secret_key`; walidacja endpointu, regionu, bucket, prefiksu). Sekret nie wraca w REST ani w logach.
+- **Pakiet `controller/sbom/s3store`:** klucz `<prefix>/<cluster>/images/<digest>.cdx.json.gz` (digest `sha256:`/`sha512:` hex). Właściciel obiektu w `x-amz-meta-nv-owner` (rejestr + ID obrazu). Klient bez przekierowań.
+- **Zapis:** upload w tle po zapisie wyniku, maks. 4 naraz, timeout 2 min, nadpisanie. Pole usuwane przed zapisem do KV (i w `encodeScanReport`). Błąd S3 = ostrzeżenie.
+- **Usuwanie (D15)** `controller/cache/sbom_s3.go`: co 10 min, tylko lider, po `syncInitDone`, `delete_unused=true`; obecne digesty = rejestry + `ImageDigest`/`ImageRepoDigests` workloadów; pusty zbiór = brak usuwania; karencja od pierwszego przeglądu lidera i od `leaderElectedAt` (nadzorca sprawdził warunki). Restart i zmiana lidera niczego nie usuwają przed pełną karencją.
+- **REST:** `GET /v1/sbom/s3/images` (RBAC; `{"images":[{registry,image_id,digest,images[],size,last_modified}]}`). `format=cyclonedx` dla obrazu rejestru i `/v1/scan/image/:id/sbom` zwraca dokument z S3 po tej samej kontroli RBAC (sprawdzenie CRC, ≤ 32 MiB gzip, ≤ 256 MiB JSON, maks. 4 pobrania, 30 s); inaczej inwentarz. Workload, host i SPDX: zawsze inwentarz (D26).
+**Testy:** `go test ./controller/... ./share/...` OK, `-race` OK, golangci-lint 0, Redocly OK. Nadzorca powtórzył 8 pakietów: OK. Testy m.in.: oba `delete_unused`, karencja, restart, brak lidera, brak synchronizacji, pusty zbiór, cudze obiekty, digest wraca; błąd S3 nie blokuje skanu; pole nie trafia do KV; sekret nie w logach; 403 bez zapytania do S3.
+**Przeglądy (D17):** /code-review 1: 9 uwag, poprawiono 6. /code-review 2: 10 uwag, poprawiono 6 (m.in. **PATCH był w mapie uprawnień DELETE**). /code-review 3: 8 uwag, poprawiono 6. /security-review: **1 HIGH poprawiony** (`84ebcea`): rejestr dodany przez użytkownika namespace mógł podać cudzy digest i nadpisać SBOM innego tenanta – teraz właściciel obiektu w metadanych.
+**Otwarte sprawy:**
+- Zmiana nazwy klastra zostawia stare obiekty (rozwiązanie: stały ID klastra w kluczu). Klastry z tą samą nazwą i prefiksem we wspólnym bucket kolidują – wymagany unikalny prefiks (dokumentacja).
+- Multi-arch: digest indeksu (workload) i manifestu (rejestr) mogą się różnić – przy `delete_unused=true` obiekt może zniknąć, choć pod działa.
+- Proxy rejestru używane też dla S3 (bez no_proxy dla wewnętrznego MinIO).
+- Zapis konfiguracji S3 wymaga tylko globalnego zapisu `sbom` (SSRF przez endpoint dla tej roli) – §11.
+- `Docker-Content-Digest` nie jest sprawdzany z treścią manifestu (problem istniejący, osobny PR).
+- aws-sdk-go v1 wycofany przez AWS; upstream może chcieć v2.
+- Lista `/v1/sbom/s3/images` czyta cały prefiks klastra (+ HEAD) przy każdym wywołaniu.
+- Uwaga procesowa sesji: jeden błędny `git reset --hard` w trakcie pracy; zmiany odtworzone, commity kompletne.
+
 ## 11. Decyzje czekające na człowieka
 
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
@@ -415,3 +440,5 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 - D24: 2 podniesienia z bumpa neuvector w skanerze. Potwierdź przed PR upstream.
 - S4: reguły admission z zakresem w federacji z klastrami starszych wersji nigdy nie pasują (bez błędu). Zdecyduj przed PR: wymaganie wersji albo blokada zakresu w regułach fed.
 - S6: Syft zwiększa pamięć skanera o 230–570 MB. Sprawdź limity pamięci poda skanera w helm przed wdrożeniem.
+- S8a: konfiguracja S3 (endpoint) wymaga tylko globalnego zapisu `sbom`, a nie `config` – rola z tym uprawnieniem może kierować żądania kontrolera na dowolny endpoint (SSRF, odpowiedzi nie wracają do wywołującego). Ten sam model co DT (S5). Potwierdź przed PR.
+- S8a: aws-sdk-go v1 jest wycofany. Upstream może wymagać v2 (nowe moduły).
