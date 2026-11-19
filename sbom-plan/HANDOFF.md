@@ -196,6 +196,9 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | Wspólne kroki handlerów SBOM (RBAC, format, odpowiedź) | `sbomPrepare`, `sbomRespond`, `sbomRespErr` | `neuvector/controller/rest/sbom.go` (S3) |
 | UI: panel SBOM (lista komponentów, filtr, pobieranie) | `SbomPanelModule` / `app-sbom-panel` (wejścia `url`, `params`, `name`, `tableHeight`), `cdxToRows`, `sbomFileName` | `neuvector-manager/admin/webapp/websrc/app/routes/components/sbom-panel/` (S7) |
 | UI: proxy SBOM do kontrolera | `PolicyService.getSbom(tokenId, segments, format)` | `neuvector-manager/admin/src/main/scala/com/neu/service/policy/PolicyService.scala` (S7) |
+| Zapytanie o wersję (dokładna albo zakres, dpkg/semver według typu purl) | `sbom.ParseVersionQuery`, `VersionQuery.Match` | `neuvector/controller/sbom/version.go` (S4) |
+| Moduły z SQLite bez podatności | `db.GetModules` | `neuvector/db/models.go` (S4) |
+| Walidacja wpisu kryterium `modules` (zakres) | `cache.ValidateModulesCriterionValue` | `neuvector/controller/cache/admission.go` (S4) |
 
 ## 9. Bezpieczeństwo
 
@@ -310,9 +313,28 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 **Przeglądy (D17):** /code-review 1: 6 uwag, poprawiono 4. /code-review 2: 5 uwag, poprawiono 3. /code-review 3: 4 uwagi, poprawiono 2. Pominięte: wysokość gridu (jak istniejące), kodowanie ścieżki (httprouter dekoduje), kontener zakończony (otwarta sprawa). /security-review: 0 HIGH/MEDIUM.
 **Otwarte sprawy:** kontener zakończony – zakładka pokazuje „Brak wyniku skanu” (do decyzji: ukryć albo inny komunikat). Brak sprawdzenia w przeglądarce z prawdziwym kontrolerem (TEST-RUNBOOK S7). Panel czyta tylko `components` pierwszego poziomu. Część B (Components z S4, ustawienia DT z S5) – po S4 i S5.
 
+### S4: Wyszukiwanie komponentów i admission – wynik (sesja `session_01Y19972PmCiLenoPh37oTcJ`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s4-search-admission` w `neuvector-neuvector` (od `claude/sbom-s3-export-rbac`, 5 commitów, ostatni `1c0f139`).
+- REST `GET /v1/scan/component?name=&purl=&version=` (`controller/rest/component.go`), uprawnienie `sbom`, wyniki według `acc`. `name` (≤256, bez wielkości liter) pasuje do nazwy komponentu SBOM albo nazwy w purl; `purl` (≤512) przez `PurlMergeKey`, bez wersji = wszystkie wersje; `version` (≤128, ≤8 ograniczeń): `2.17.1`, `<2.17.1`, `>=1.0, <2.0` (operatory `=`, `==`, `<`, `<=`, `>`, `>=`). `name` + `purl` = AND. Kody: 400 (parametry), 403 (brak `sbom`), 429 (inne wyszukiwanie trwa).
+- Odpowiedź `RESTComponentSearchData`: `workloads` (id, name, container, domain, image, image_id, components), `hosts` (tylko globalny `sbom`), `images` (rejestry: registry, image_id, digest, images, domain, components; tagi z niedostępnych namespace ukryte), `running_images` (image_id, image, workloads, components). Listy posortowane, zawsze `[]`.
+- Porównanie wersji (`controller/sbom/version.go`): deb/rpm/apk/alpm i komponenty bez purl – dpkg (`utils.NewVersion`); inne typy – `hashicorp/go-version`, zapas dpkg; bez parsowania – `=` jako napis.
+- Admission (`controller/cache/admission.go`): D23 – moduły `Origin=syft` pominięte w `modules`. Nowy zakres `nazwa>=a<b` (≥2 granice, bez przecinka, bo przecinek dzieli wpisy, porównanie dpkg). Stare formaty bez zmian. Walidacja przy zapisie (REST 400, CRD) tylko dla wpisów z ≥2 `<`/`>`.
+- Nowy `db.GetModules` (tylko kolumna modułów); używają go też endpointy SBOM z S3. Odczyt SQLite poza `scanMutex`/`stateMux`.
+- DoS: jedno wyszukiwanie naraz (`TryLock`, 429), limity parametrów, przerwanie po rozłączeniu klienta.
+**Obrazy:** `ghcr.io/wmp/neuvector-controller:claude-sbom-s4-search-admission-1c0f139`, `ghcr.io/wmp/neuvector-enforcer:claude-sbom-s4-search-admission-1c0f139`. CI run 44605869875 i Fork test images run 44605870046: sukces.
+**Testy:** `go test ./controller/... ./db/... ./share/...` OK (nadzorca powtórzył dla `cache`, `sbom`, `rest`, `access`, `scan`, `db`: OK). golangci-lint 0, openapi-lint OK. RBAC: ns1 nie widzi ns2, hostów, rejestru ns2, tagów innych namespace; brak `sbom` = 403. Regresja D23: wynik reguł `modules` taki sam z modułami Syft i bez nich. Pomiar: 2000 workloadów × 500 modułów w SQLite = 3,2–5,2 s (cel < 1 min, bez tabeli indeksu).
+**Przeglądy (D17):** /code-review 1: 7 uwag, poprawiono 4. /code-review 2: 6 uwag, poprawiono 4. /code-review 3: 7 uwag, poprawiono 5. Pominięte: stare wartości w formacie zakresu zaczną działać (cel S4), `vim=<1.0` bez walidacji (jak przed zmianą), różne komparatory w wyszukiwaniu i admission (zgodność wsteczna), zły zakres w CRD = błąd (jak zły regex), `baseOS` z innego skanu przy jednoczesnym skanie (rzadkie, wpływa tylko na `distro`). /security-review: 0 HIGH/MEDIUM.
+**Otwarte sprawy:**
+- **Federacja z różnymi wersjami:** starszy klaster zarządzany czyta zakres starym parserem i reguła nigdy nie pasuje (bez błędu). Przed PR upstream: wymaganie wersji albo blokada zakresu w regułach fed (§11).
+- Reguły zapisane przed S4 w formacie zakresu zaczną działać – opisać w informacji o wydaniu.
+- Różne komparatory: `2.0.0-beta1 < 2.0.0` w wyszukiwaniu, ale nie w admission.
+- Czas wyszukiwania dla wielu obrazów w rejestrach niezmierzony.
+- Admission wymaga pełnej nazwy NV (jar: `org.apache.logging.log4j:log4j-core>=2.0.0<2.17.1`). Samo `log4j-core` działa tylko w wyszukiwaniu.
+
 ## 11. Decyzje czekające na człowieka
 
 - Wysłanie zgłoszenia `reports/upstream-security-cosign-failopen.md` e-mailem (D20).
 - S3: rola własna z wszystkimi uprawnieniami odczytu (zapisana przed S3) automatycznie dostaje `sbom` (decyzja S3, `controller/access/access.go`, `getRolePermitValues`). Potwierdź przed PR upstream.
 - D22: Syft domyślnie włączony. Potwierdź przed PR upstream.
 - D24: 2 podniesienia z bumpa neuvector w skanerze. Potwierdź przed PR upstream.
+- S4: reguły admission z zakresem w federacji z klastrami starszych wersji nigdy nie pasują (bez błędu). Zdecyduj przed PR: wymaganie wersji albo blokada zakresu w regułach fed.
