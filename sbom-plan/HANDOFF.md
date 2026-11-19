@@ -199,6 +199,9 @@ Sesja, która dodaje nowy helper używany w więcej niż jednym miejscu, dopisuj
 | Zapytanie o wersję (dokładna albo zakres, dpkg/semver według typu purl) | `sbom.ParseVersionQuery`, `VersionQuery.Match` | `neuvector/controller/sbom/version.go` (S4) |
 | Moduły z SQLite bez podatności | `db.GetModules` | `neuvector/db/models.go` (S4) |
 | Walidacja wpisu kryterium `modules` (zakres) | `cache.ValidateModulesCriterionValue` | `neuvector/controller/cache/admission.go` (S4) |
+| Szablony projektu DT (walidacja, renderowanie) | `dtrack.ValidateTemplates`, `dtrack.Render`, `dtrack.WithDefaults` | `neuvector/controller/sbom/dtrack/` (S5) |
+| Klient i kolejka DT | `dtrack.Client`, `dtrack.NewUploader` | `neuvector/controller/sbom/dtrack/` (S5) |
+| Moduły obrazu z rejestru bez RBAC (tylko wewnętrznie) | `scan.RegistryImageModules(imageID)` | `neuvector/controller/scan/interface.go` (S5) |
 
 ## 9. Bezpieczeństwo
 
@@ -330,6 +333,24 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 - Różne komparatory: `2.0.0-beta1 < 2.0.0` w wyszukiwaniu, ale nie w admission.
 - Czas wyszukiwania dla wielu obrazów w rejestrach niezmierzony.
 - Admission wymaga pełnej nazwy NV (jar: `org.apache.logging.log4j:log4j-core>=2.0.0<2.17.1`). Samo `log4j-core` działa tylko w wyszukiwaniu.
+
+### S5: Dependency-Track – wynik (sesja `session_01Y19971rN5EokWvWw9am8Lz`, przegląd nadzorcy: OK)
+**Co zrobiono:** gałąź `claude/sbom-s5-dependency-track` w `neuvector-neuvector` (od `claude/sbom-s3-export-rbac`, 7 commitów, ostatni `830ee31`; endpoint podglądu – uzupełnienie w toku). Bez nowych modułów Go.
+- Konfiguracja: `CLUSSystemConfig.DependencyTrack` (`share.CLUSDependencyTrack`): `enabled`, `url`, `api_key` (tag `cloak`), `project_name`, `project_version`, `tags`, `inactive_grace_period` (min, domyślnie 1440). Domyślnie wyłączona.
+- REST: `GET /v1/sbom/dependency_track` (globalny `sbom` odczyt; zwraca `api_key_set`, nigdy klucza) i `PATCH` (globalny `sbom` zapis; pola opcjonalne; `api_key: ""` usuwa klucz). 400: zły URL (tylko http/https, bez userinfo/query/fragmentu), `enabled` bez URL/klucza, **nowy URL bez nowego `api_key`** (ochrona klucza), zły szablon (nieznany symbol, nawiasy, znaki sterujące, >1024), tagi (przecinek, puste, >50).
+- Pakiet `controller/sbom/dtrack`: szablony (`strings.NewReplacer`, jeden przebieg), klient (multipart `POST /api/v1/bom`, lookup, `PATCH active`, bez przekierowań), `Uploader` (1 worker, deduplikacja, backoff 30 s → 30 min, 8 prób; 413 i 4xx bez ponowień).
+- `controller/cache/dtrack.go`: wysyłka po `scanDone` kontenera, przegląd co 5 min, mapa podów z eventów k8s, tylko lider, reset kolejki po utracie lidera. SBOM = `sbom.Write` (CycloneDX z S3) po `json.Compact`.
+**Obrazy:** `ghcr.io/wmp/neuvector-controller:claude-sbom-s5-dependency-track-830ee31`, `ghcr.io/wmp/neuvector-enforcer:claude-sbom-s5-dependency-track-830ee31`. CI run 44607140970 i Fork test images run 44607140894: sukces.
+**Testy:** 34 testy + test szyfrowania (`dtrack`, szablony, cache z `httptest` jako DT, REST). `-race` OK. Testy logów: klucz API nie występuje w logach ani błędach. Nadzorca powtórzył `go test` dla `sbom/...`, `cache`, `rest`, `common`, `scan`: OK.
+**Ustalenia z DT (zamknięcie [weryfikacja] z §5; źródła: kod DT master i docs.dependencytrack.org):**
+- `POST /api/v1/bom` multipart: `project`, `autoCreate`, `projectName`, `projectVersion`, `projectTags`, `parentName`, `parentVersion`, `parentUUID`, `isLatest`, `bom` (czysty JSON). Uprawnienia klucza: BOM_UPLOAD + PROJECT_CREATION_UPLOAD (albo PORTFOLIO_MANAGEMENT); dla „inactive”: VIEW_PORTFOLIO + PORTFOLIO_MANAGEMENT. Nagłówek `X-Api-Key`.
+- `projectTags`: jeden napis, przecinki; od DT 4.12.0 (poprawka dla istniejących projektów 4.12.7). Tag `klucz=wartość` jest poprawny; DT zmienia nazwę tagu na małe litery (`PRODUKT=x` → `produkt=x`).
+- `active`: `PATCH /api/v1/project/{uuid}` `{"active":false}` (200/304/409), UUID z `GET /api/v1/project/lookup?name=&version=`. Pole od 4.12.0. Wysyłka do nieaktywnego projektu nie aktywuje go, więc NV ustawia active=true przed pierwszą wysyłką **[weryfikacja na żywym DT]**.
+- DT nie ma własnego limitu rozmiaru BOM; 413 pochodzi z proxy (FAQ: `nginx.ingress.kubernetes.io/proxy-body-size: "100m"`). Limity Jetty/Alpine **[weryfikacja]**.
+- **Minimalna wersja DT: 4.12.0** (tagi i `active`), zalecana ≥ 4.12.7.
+**Decyzje:** klucz przez tag `cloak` (wzór sekretów NV w KV: DEK, migracja, eksport), nie `EncryptSensitive`; `Format` ukrywa klucz w `%v`. Odchudzony CycloneDX niepotrzebny (kontroler nie ma `properties` Syft). Deduplikacja: klucz nazwa+wersja, pamiętany digest (5 replik = 1 wysyłka). Zastępstwo `{replicaset}` → `{pod}` w nazwie, wersji i tagach. Pod bez eventu k8s pominięty do przeglądu. „Inactive”: lider + `syncInitDone` + grace od wyboru lidera, od startu uploadera i od ostatniego widzenia projektu; stan w pamięci lidera, więc restart niczego nie oznacza. Poza Kubernetes: ostrzeżenie, bez wysyłki. `resolveRegistry` ma ochronę przed nil registry (`67f1cf2`).
+**Przeglądy (D17):** /code-review 1: 10 uwag, poprawiono 7 (m.in. kradzież klucza przez zmianę URL). /code-review 2: 9 uwag, poprawiono 7. /code-review 3: 8 uwag, poprawiono 5. Pominięte: wyścig na `syncInitDone` (wzór `isLeader()`), osierocone projekty i odświeżanie SBOM (otwarte sprawy, komentarze `shortcut:`), nil-check w innych miejscach `repoScanRegistry` (istniejący). /security-review: 0 HIGH/MEDIUM; LOW (kolizja projektów przy szablonie tylko z etykiet poda) pominięta.
+**Otwarte sprawy:** projekty wysłane przed restartem/zmianą lidera/zmianą konfiguracji nigdy nie dostają „inactive” (bezpieczne, ale zostają; rozwiązanie: klucze w KV). SBOM w DT odświeżany tylko po zmianie digest albo restarcie (rozwiązanie: hash modułów). Etykiety Deployment niedostępne (§5). Konfiguracja tylko przez REST (bez helm).
 
 ## 11. Decyzje czekające na człowieka
 
