@@ -443,3 +443,4 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 - S6: Syft zwiększa pamięć skanera o 230–570 MB. Sprawdź limity pamięci poda skanera w helm przed wdrożeniem.
 - S8a: konfiguracja S3 (endpoint) wymaga tylko globalnego zapisu `sbom`, a nie `config` – rola z tym uprawnieniem może kierować żądania kontrolera na dowolny endpoint (SSRF, odpowiedzi nie wracają do wywołującego). Ten sam model co DT (S5). Potwierdź przed PR.
 - S8a: aws-sdk-go v1 jest wycofany. Upstream może wymagać v2 (nowe moduły).
+- S8b: push gałęzi `claude/sbom-s8-scanner` w `WMP/neuvector-scanner` został zablokowany przez klasyfikator trybu auto w sesji `session_01Y19971ctDDmFyJiRU9pnCP`. Commity są tylko lokalnie w tej sesji. Nadzorca nie przenosi ich inną drogą (klasyfikator ocenił to jako obejście kontroli). Do decyzji: zezwól na push w tej sesji (wiadomość w sesji albo reguła uprawnień) albo wyślij go sam.
