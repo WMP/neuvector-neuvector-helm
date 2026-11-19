@@ -66,6 +66,7 @@ S4, S5, S6 i S7 mogą działać równolegle po S3 (S6 tylko po S2). S8 po S3 i S
 **Repozytorium:** `neuvector` (kontroler).
 - REST: `GET /v1/scan/component?name=&version=` (zakres wersji, np. `<2.17.1`) oraz wyszukiwanie po purl. Wynik: pody, węzły, obrazy (z rejestru i z działających podów).
 - Obrazy: wyszukiwanie w cache w pamięci. Workloady: przejście po blobach w SQLite. Tabela indeksu tylko wtedy, gdy pomiar pokaże, że to za wolno (cel: < 1 min dla klastra testowego).
+- Admission (D23): moduły `Origin=syft` pomijane w kryterium `modules` (`controller/cache/admission.go:1319`). Test regresji: istniejąca reguła `modules` daje ten sam wynik dla raportu z modułami Syft i bez nich.
 - Admission: zakres wersji w istniejącym kryterium `modules` (`controller/cache/admission.go:1319`). Najpierw przeczytaj `isComplexMapCriterionMet`, aby zachować zgodność obecnych reguł.
 - RBAC: wyniki filtrowane według zakresu użytkownika.
 
@@ -90,7 +91,7 @@ S4, S5, S6 i S7 mogą działać równolegle po S3 (S6 tylko po S2). S8 po S3 i S
 - **Purl w skanerze (D19):** w `feature2Module()` (`cvesearch.go:1574`) ustaw `Purl` funkcją z S2. Dla dokładnego purl dodaj w parserach (`detectors/features.go`, `share/scan/apps.go` przez vendor albo lokalnie) dane tylko dla purl: wersja binarna deb, nazwa binarna apk, źródło jar (pom/MANIFEST: bez purl maven z MANIFEST, gdy jest moduł z pom dla tego samego pliku), vendor composer. Nie zmieniaj `Name`/`Version` używanych do CVE. Szczegóły: `spike/S1-RESULTS.md` §6–7.
 - Katalogery Syft z tagiem `image`. Bez absolutnych symlinków w katalogu skanu (`spike/S1-RESULTS.md` §3 pkt 5).
 - Scalanie według klucza z `HANDOFF.md` §4 (znormalizowany purl). Moduł NV wygrywa. Syft dodaje `Licenses`. Pakiety tylko z Syft: nowe moduły z `Origin=syft`, bez `Vuls`. Nie zmieniaj dopasowania CVE.
-- Testy: brak duplikatów dla jar (`groupId:artifactId` kontra Maven z Syft), python, go. Regresja: istniejąca reguła admission `modules` daje ten sam wynik przed i po S6 (moduły `Origin=syft` są pominięte w kontrolerze, `controller/cache/admission.go:1319`; ta jedna linia filtra należy do S6).
+- Testy: brak duplikatów dla jar (`groupId:artifactId` kontra Maven z Syft), python, go. Filtr `Origin=syft` w admission należy do S4 (D23).
 - Flaga do wyłączenia Syft (domyślna wartość do decyzji organizatora). Limit czasu dla Syft.
 - Pomiar: czas skanu i rozmiar raportu przed i po zmianie.
 

@@ -37,6 +37,8 @@ NeuVector daje pełny inwentarz komponentów (SBOM) dla obrazów, działających
 | D19 | Zakres S2/S6 (2026-11-19, po S1) | S2 (`neuvector`): proto, funkcja purl w `share/scan`, zabezpieczenie limitu 512 KB. Zmiany w parserach skanera dla purl (wersja binarna deb, nazwa binarna apk, źródło jar pom/MANIFEST, vendor composer) idą do S6. Pole `Version` używane do CVE bez zmian. |
 | D20 | Zgłoszenie fail-open cosign | Użytkownik zlecił zgłoszenie. Kanał upstream to e-mail (`security-neuvector@suse.com`). Tekst: `reports/upstream-security-cosign-failopen.md`. Wysyła człowiek. |
 | D21 | Praca nocna | Użytkownik: „nie pytaj o więcej”. Nadzorca prowadzi sesje według grafu bez pytań. Decyzje wymagające człowieka (zgoda na podniesienie zależności spoza D2, PR do upstream, wysyłka na zewnątrz) czekają w §11. |
+| D22 | Syft w skanerze – domyślnie (decyzja nadzorcy) | Syft domyślnie **włączony**. Flaga/zmienna do wyłączenia. Limit czasu 300 s. Błąd albo przekroczenie czasu: skan kończy się bez danych Syft, ostrzeżenie w logu. Do potwierdzenia przez użytkownika przed PR upstream (upstream może woleć domyślnie wyłączony). |
+| D23 | Filtr `Origin=syft` w admission (decyzja nadzorcy) | Przeniesiony z S6 do S4. Linia filtra jest w repozytorium `neuvector` (`controller/cache/admission.go`), a S6 zmienia tylko skaner. S4 i tak zmienia admission. Do czasu S4 moduły Syft w obrazach z gałęzi S6 mogą wejść do istniejącego kryterium `modules` – testy admission na klastrze dopiero po S4. |
 
 ## 3. Gdzie NV trzyma dane (odpowiedź na pytanie o miejsce na pliki SBOM)
 
