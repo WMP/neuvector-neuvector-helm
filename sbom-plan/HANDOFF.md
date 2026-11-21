@@ -473,6 +473,8 @@ Kryteria S6 spełnione (< 512 KiB, ≥ 98% łącznie). Poniżej 98%: debian12 (`
 **Sprawdzenie nadzorcy:** brak znaczników konfliktów; `go.mod`/`go.sum`/`vendor/` jak w bazie; `go build ./...` OK; `go test ./controller/... ./share/... ./db/...` – wszystko OK. CI run 44629462228 i Fork test images run 44629462426: sukces.
 **Obrazy:** `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-0148fe3`, `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-0148fe3`.
 **Uwaga:** sesja nie wysłała raportu (zakończyła turę po przeglądzie); dane z commitów merge i z przeglądu nadzorcy.
+**Uzupełnienie D28:** merge `6290d14` (S5 `f55a66e`, bez konfliktów) i `fix` `3137103` (`GetScanModules` sprawdza `scanMap` po odczycie z SQLite, jak `d3dfeb3` dla rejestru). CI run 44880204849 i Fork test images run 44880204893: sukces. **Obrazy `ghcr.io/wmp/neuvector-{controller,enforcer}:claude-sbom-integration-3137103`.** Nadzorca powtórzył testy `cache`, `sbom/...`, `rest`: OK. /code-review: 2 uwagi, poprawiono 1 (pominięty test wyścigu – brak punktu wstrzyknięcia).
+**Przed PR upstream:** poprawki `d3dfeb3` i `3137103` są tylko na gałęzi integracyjnej, a błąd pochodzi z S4 (odczyt SQLite poza blokadą). Przenieś je (cherry-pick) na `claude/sbom-s4-search-admission`. Problem istniejący: usunięcie obrazu z jednego rejestru kasuje wspólny wiersz SQLite dla tego samego ID w innych rejestrach.
 
 ## 11. Decyzje czekające na człowieka
 

@@ -14,13 +14,13 @@ Pakiet zawiera katalog `specs/` (CycloneDX 1.6, SPDX 2.3, purl, skrypt `validate
 - Tagi obrazów: `controller`, `enforcer`, `scanner`, `manager` (format `<branch>-<sha>`).
 - Numer sesji (S1–S8) do sprawdzenia.
 
-## Obrazy NV do testów (stan 2026-11-19, 23:30 UTC)
+## Obrazy NV do testów (stan 2026-11-21, 07:40 UTC)
 Wszystkie pakiety ghcr są publiczne (bez logowania).
 
 | Komponent | Obraz | Zawartość |
 |---|---|---|
-| controller | `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-0148fe3` | S2 + S3 + S4 + S5 + S8a (gałąź `claude/sbom-integration`) |
-| enforcer | `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-0148fe3` | jak wyżej |
+| controller | `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-3137103` | S2 + S3 + S4 + S5 (z hierarchią D28) + S8a (gałąź `claude/sbom-integration`) |
+| enforcer | `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-3137103` | jak wyżej |
 | scanner | `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f` | S6 (Syft, purl, licencje). **Bez S8b** (pełny SBOM do S3) – push S8b czeka na zgodę użytkownika. Po push: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s8-scanner-c27f6fe` |
 | manager | `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-e5c3238` | S7 A + B1 + B2 + C |
 
