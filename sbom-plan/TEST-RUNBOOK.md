@@ -21,11 +21,11 @@ Wszystkie pakiety ghcr są publiczne (bez logowania).
 |---|---|---|
 | controller | `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-3137103` | S2 + S3 + S4 + S5 (z hierarchią D28) + S8a (gałąź `claude/sbom-integration`) |
 | enforcer | `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-3137103` | jak wyżej |
-| scanner | `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f` | S6 (Syft, purl, licencje). **Bez S8b** (pełny SBOM do S3) – push S8b czeka na zgodę użytkownika. Po push: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s8-scanner-c27f6fe` |
+| scanner | `ghcr.io/wmp/neuvector-scanner:claude-sbom-s8-scanner-c27f6fe` | S6 (Syft, purl, licencje) + S8b (pełny SBOM do S3 przy fladze kontrolera) |
 | manager | `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-8ae5183` | S7 A + B1 + B2 + C + podgląd hierarchii DT (D28) |
 
 Uwagi:
-- Skaner z S6 i kontroler z integracji są zgodne (pole flagi z S8a skaner S6 ignoruje). Testy S8 z pełnym SBOM w S3 wymagają skanera z S8b; bez niego S3 dostaje tylko konfigurację i listę (pustą).
+- Skaner z S8b i kontroler z integracji mają te same pola proto (S8a). Pełny SBOM trafia do S3 tylko ze skanów rejestru przy włączonym S3.
 - Syft zwiększa pamięć skanera o 230–570 MB – ustaw limit pamięci poda skanera z zapasem (np. 3 Gi) albo sprawdź OOM.
 - Wyłączenie Syft: zmienna `SCANNER_DISABLE_SYFT=true` w podzie skanera.
 - DT: minimalna wersja **4.12.7**; klucz API z BOM_UPLOAD, PROJECT_CREATION_UPLOAD, VIEW_PORTFOLIO, PORTFOLIO_MANAGEMENT (bez PORTFOLIO_MANAGEMENT projekty są płaskie); ingress DT z `proxy-body-size: "100m"`.

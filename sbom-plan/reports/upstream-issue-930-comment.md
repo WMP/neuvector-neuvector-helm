@@ -37,10 +37,10 @@ Hi, we would like to contribute this feature and we have a working prototype. Fo
 |---|---|
 | controller | `ghcr.io/wmp/neuvector-controller:claude-sbom-integration-3137103` |
 | enforcer | `ghcr.io/wmp/neuvector-enforcer:claude-sbom-integration-3137103` |
-| scanner | `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f` |
+| scanner | `ghcr.io/wmp/neuvector-scanner:claude-sbom-s8-scanner-c27f6fe` |
 | manager | `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-8ae5183` |
 
-To try them, install NeuVector with the Helm chart and override the image repositories and tags. The scanner needs more memory with Syft enabled (we use a 3 Gi limit). The full-SBOM upload to S3 (part 6) also needs a newer scanner build, which is not published yet.
+To try them, install NeuVector with the Helm chart and override the image repositories and tags. The scanner needs more memory with Syft enabled (we use a 3 Gi limit).
 
 **Questions for the maintainers:**
 1. Is this split into PRs acceptable? Do you want the optional parts (Syft, Dependency-Track, S3) in this repository at all?
