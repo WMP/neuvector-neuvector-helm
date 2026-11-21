@@ -392,6 +392,21 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 **Przeglądy (D17):** /code-review 1: 6 uwag, poprawiono 1. /code-review 2: 6, poprawiono 2. /code-review 3: 6, poprawiono 2. /security-review: 0 HIGH/MEDIUM.
 **Otwarte sprawy:** **logowanie sekretów w managerze zależy od biblioteki**: `ClientSslConfig.sendReceiver` loguje `request.toString` (INFO); pekko-http 1.0.1 wypisuje tylko rozmiar treści, ale po podniesieniu pekko-http trzeba to sprawdzić albo jawnie maskować treść dla `sbom/s3` i `sbom/dependency_track` (ten sam mechanizm dotyczy istniejących sekretów managera). SBOM obrazu usuniętego z rejestru zostaje na liście (karencja), ale pobranie zwraca 404 (rozwiązanie: endpoint pobrania z S3 po digest). Brak strażników tras (kontroler 403). Brak testu w przeglądarce i z MinIO.
 
+### S5 – hierarchia projektów DT (D28) – wynik (sesja `session_01Y19971rN5EokWvWw9am8Lz`, przegląd nadzorcy: OK)
+**Co zrobiono:** commity `d424937`, `0769d07`, `1014305`, `f55a66e` na `claude/sbom-s5-dependency-track`. Obrazy `ghcr.io/wmp/neuvector-{controller,enforcer}:claude-sbom-s5-dependency-track-f55a66e`. CI run 44878698107 i Fork test images run 44878698117: sukces. Nadzorca powtórzył testy `sbom/...`, `cache`, `rest`, `access`: OK.
+- Poziomy = segmenty `project_name` rozdzielone `/` poza `{...}` (`splitLevels`). Nazwa poziomu = pełna ścieżka. Rodzice bez wersji; wersja i tagi tylko na liściu.
+- `{rancher.project}` = etykieta namespace `field.cattle.io/projectId`; pusty poziom nadrzędny pominięty; pusty liść = brak wysyłki. Domyślny szablon: `{cluster}/{rancher.project}/{namespace}/{replicaset}/{container}`. Pusty poziom w szablonie (`a//b`) = 400.
+- Lider tworzy/aktywuje rodziców od korzenia (`PUT /api/v1/project`, `PATCH`), pamięta UUID. Istniejący płaski liść dostaje rodzica przez `PATCH`. Wysyłka `POST /api/v1/bom` z `parentUUID`. Workload czeka na dane namespace w cache.
+- „Inactive” kaskadowo: liście, potem rodzice bez żywych liści, od najgłębszego; 409 bez pętli; restart nic nie dezaktywuje.
+- Podgląd: nowe pole `parents` (od korzenia).
+**Ustalenia z DT (kod master, changelog):** rodzic bez wersji działa (lookup bez parametru `version` = `version == null`); `PUT /api/v1/project` z nieznanym UUID rodzica tworzy projekt bez rodzica (NV poprawia przez PATCH); `POST /api/v1/bom` ustawia rodzica tylko przy autoCreate, rodzic musi istnieć; `PATCH` zwraca 409 dla nieaktywnego rodzica i dla dezaktywacji rodzica z aktywnymi dziećmi. **Minimalna wersja DT: 4.12.7. Klucz: BOM_UPLOAD, PROJECT_CREATION_UPLOAD, VIEW_PORTFOLIO, PORTFOLIO_MANAGEMENT** (bez PORTFOLIO_MANAGEMENT wysyłka płaska).
+**Przeglądy (D17):** /code-review 1: 8 uwag, poprawiono 6. /code-review 2: 8, poprawiono 5. /code-review 3: 7, poprawiono 3. /security-review: 0 (nazwa rodzica to zawsze prefiks ścieżki dziecka, więc właściciel namespace nie przeniesie projektu innego zespołu).
+**Otwarte sprawy:**
+- **Nowy domyślny szablon zmienia nazwy projektów w namespace z projektem Rancher.** Stare płaskie projekty `klaster/ns/rs/kontener` zostają aktywne w DT (NV ich nie zna) – usuń je ręcznie albo zapisz stary szablon przed aktualizacją. W namespace bez Rancher nazwy są takie same, a stare projekty dostają rodzica.
+- Powrót do płaskiego szablonu nie przenosi projektów do korzenia (`shortcut:`).
+- **[weryfikacja na żywym DT]:** lookup bez wersji (null w DataNucleus), BOM pod nieaktywnym rodzicem (prawdopodobnie 500), kody 409.
+- Rodzice sprzed restartu/zmiany lidera nie dostają „inactive” (ten sam skrót co dla liści).
+
 ### S6: Syft w skanerze – wynik (sesja `session_01Y19971RUMrz1fHKj5EopAB`, przegląd nadzorcy: OK)
 **Co zrobiono:** gałąź `claude/sbom-s6-syft` w `neuvector-scanner` (od `claude/sbom-s0-ci-ghcr`, 6 commitów, ostatni `99ae74f`). Obraz: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f`. Workflow: sukces (uwaga: workflow unitest upstream nie uruchamia `go test`, bo `uname -p` = `unknown` na runnerze – problem istniejący).
 - `deps(go)` (`b62bae2`): Syft v1.42.4, `replace github.com/neuvector/neuvector => github.com/WMP/neuvector-neuvector v0.0.0-20261119181710-3a8b8792ee72` (S2). Podniesienia (nadzorca sprawdził `go.mod`): `go-version` 1.8.0, `go-runewidth` 0.0.19 (D2), `go-rootcerts` 1.1.0, `yaml/v3` 3.0.6 (D24). 182 nowe moduły.

@@ -28,7 +28,7 @@ Uwagi:
 - Skaner z S6 i kontroler z integracji są zgodne (pole flagi z S8a skaner S6 ignoruje). Testy S8 z pełnym SBOM w S3 wymagają skanera z S8b; bez niego S3 dostaje tylko konfigurację i listę (pustą).
 - Syft zwiększa pamięć skanera o 230–570 MB – ustaw limit pamięci poda skanera z zapasem (np. 3 Gi) albo sprawdź OOM.
 - Wyłączenie Syft: zmienna `SCANNER_DISABLE_SYFT=true` w podzie skanera.
-- DT: minimalna wersja 4.12.0 (zalecana ≥ 4.12.7); klucz API z BOM_UPLOAD, PROJECT_CREATION_UPLOAD, VIEW_PORTFOLIO, PORTFOLIO_MANAGEMENT; ingress DT z `proxy-body-size: "100m"`.
+- DT: minimalna wersja **4.12.7**; klucz API z BOM_UPLOAD, PROJECT_CREATION_UPLOAD, VIEW_PORTFOLIO, PORTFOLIO_MANAGEMENT (bez PORTFOLIO_MANAGEMENT projekty są płaskie); ingress DT z `proxy-body-size: "100m"`.
 - S4 admission: reguła musi mieć pełną nazwę NV, np. `org.apache.logging.log4j:log4j-core>=2.0.0<2.17.1` (kryterium `modules`).
 - Szczegóły API: `HANDOFF.md` §10.
 
@@ -66,6 +66,8 @@ Uwagi:
 - Skaluj Deployment do 5 replik: liczba projektów się nie zmienia.
 - Rollout nowej wersji: nowy projekt, stary dostaje oznaczenie „inactive”.
 - Wyłącz DT na czas skanu: skan kończy się, wysyłka wraca po ponowieniu.
+- **Hierarchia (D28):** w DT drzewo `<klaster>` → `<klaster>/<projekt Rancher>` → `.../<ns>` → `.../<rs>` → `.../<kontener>` (wersja = digest tylko na liściu). Namespace bez projektu Rancher: poziom Rancher pominięty. Istniejący płaski projekt z poprzedniej wersji dostaje rodzica. Podgląd w UI pokazuje rodziców.
+- Usuń wszystkie pody z rs: po karencji liść, potem rs, ns, projekt Rancher i klaster (gdy nie mają aktywnych dzieci) dostają „inactive”. Restart kontrolera przed końcem karencji: nic nie dostaje „inactive”.
 
 ### S6
 - Raport obrazu ma licencje i purl. Porównaj z `syft` na tym samym obrazie (cel ≥ 98%).
