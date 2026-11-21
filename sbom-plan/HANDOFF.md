@@ -407,6 +407,9 @@ func Write(w io.Writer, format string, meta Meta, comps []Component) error
 - **[weryfikacja na żywym DT]:** lookup bez wersji (null w DataNucleus), BOM pod nieaktywnym rodzicem (prawdopodobnie 500), kody 409.
 - Rodzice sprzed restartu/zmiany lidera nie dostają „inactive” (ten sam skrót co dla liści).
 
+### S7 – zmiana D28 (sesja `session_01Y199724PNuPQ5sBeo1XLqV`)
+Commity `06ad42a`, `8ae5183` na `claude/sbom-s7-ui`. **Obraz `ghcr.io/wmp/neuvector-manager:claude-sbom-s7-ui-8ae5183`** (Fork test images run 44880219648: sukces). Podgląd DT pokazuje hierarchię (`parents` + liść, z wcięciem; helper `projectPath`). Pomoc: `{rancher.project}`, zasada poziomów, nowy domyślny szablon, ostrzeżenie o zmianie nazw, uprawnienia klucza z PORTFOLIO_MANAGEMENT, DT ≥ 4.12.7. Karma 34/34, lint, build: OK. /code-review: 5 uwag, poprawiono 1.
+
 ### S6: Syft w skanerze – wynik (sesja `session_01Y19971RUMrz1fHKj5EopAB`, przegląd nadzorcy: OK)
 **Co zrobiono:** gałąź `claude/sbom-s6-syft` w `neuvector-scanner` (od `claude/sbom-s0-ci-ghcr`, 6 commitów, ostatni `99ae74f`). Obraz: `ghcr.io/wmp/neuvector-scanner:claude-sbom-s6-syft-99ae74f`. Workflow: sukces (uwaga: workflow unitest upstream nie uruchamia `go test`, bo `uname -p` = `unknown` na runnerze – problem istniejący).
 - `deps(go)` (`b62bae2`): Syft v1.42.4, `replace github.com/neuvector/neuvector => github.com/WMP/neuvector-neuvector v0.0.0-20261119181710-3a8b8792ee72` (S2). Podniesienia (nadzorca sprawdził `go.mod`): `go-version` 1.8.0, `go-runewidth` 0.0.19 (D2), `go-rootcerts` 1.1.0, `yaml/v3` 3.0.6 (D24). 182 nowe moduły.
