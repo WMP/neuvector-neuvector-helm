@@ -1,0 +1,42 @@
+# Obrazy testowe SBOM (stan 2026-11-21). Użycie:
+#   helm upgrade --install neuvector neuvector/core -n neuvector -f values-sbom.yaml
+# Chart ma jeden wspólny `tag` dla controller/enforcer/manager, a obrazy testowe mają różne tagi,
+# dlatego controller, enforcer i manager są podane przez digest (`image.hash`).
+# Tagi: controller/enforcer claude-sbom-integration-3137103, manager claude-sbom-s7-ui-8ae5183,
+#       scanner claude-sbom-s8-scanner-c27f6fe.
+registry: ghcr.io
+
+controller:
+  image:
+    repository: wmp/neuvector-controller
+    hash: sha256:b23fe5a21f364a27c7eb3c7ba65d47e2f12950dd91cf3777c8c6bb692e6b14bb
+
+enforcer:
+  image:
+    repository: wmp/neuvector-enforcer
+    hash: sha256:74411beaae2904a08da185cfe2b8520be392fb7287bd04a9a9ca8a0d648a8ddb
+
+manager:
+  image:
+    repository: wmp/neuvector-manager
+    hash: sha256:0fef5507c69bc530d303b1867dea2a813181f721752c1ca18f66feb96457b6f8
+
+cve:
+  scanner:
+    image:
+      repository: wmp/neuvector-scanner
+      tag: claude-sbom-s8-scanner-c27f6fe
+      hash: ""
+    # Syft zwiększa pamięć skanera o 230-570 MB.
+    resources:
+      limits:
+        memory: 3Gi
+      requests:
+        memory: 1536Mi
+    # env:
+    #   - name: SCANNER_DISABLE_SYFT
+    #     value: "true"
+  updater:
+    image:
+      # updater zostaje z oficjalnego rejestru (globalny `registry` wskazuje teraz ghcr.io)
+      registry: docker.io
